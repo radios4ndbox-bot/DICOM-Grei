@@ -72,14 +72,39 @@
       </div>
     </section>
 
-    <!-- STEP 3 — unified progress -->
+    <!-- STEP 3 — unified stepped progress -->
     <section id="step-transfer" class="step hidden">
-      <h2 id="phase-label">Preparazione…</h2>
-      <div class="bar big"><div id="overall-fill" class="fill"></div></div>
-      <div class="row">
-        <span id="overall-pct" class="mono">0%</span>
-        <span id="phase-detail" class="muted mono"></span>
+      <div class="progress">
+        <svg class="sp" viewBox="0 0 240 24" role="img" aria-label="Avanzamento trasferimento">
+          <g class="sp__bars">
+            <line class="sp__bar" x1="10" y1="12" x2="70" y2="12" />
+            <line class="sp__bar" x1="70" y1="12" x2="150" y2="12" />
+            <line class="sp__bar" x1="150" y1="12" x2="230" y2="12" />
+            <line class="sp__bar-fill" x1="10" y1="12" x2="70" y2="12" pathLength="40" />
+            <line class="sp__bar-fill" x1="70" y1="12" x2="150" y2="12" pathLength="40" />
+            <line class="sp__bar-fill" x1="150" y1="12" x2="230" y2="12" pathLength="40" />
+          </g>
+          <g class="sp__hubs">
+            <circle class="sp__hub" cx="70" cy="12" r="6" />
+            <circle class="sp__hub" cx="150" cy="12" r="6" />
+            <circle class="sp__hub" cx="230" cy="12" r="6" />
+            <circle class="sp__hub-fill" cx="70" cy="12" r="10" transform="rotate(-90 70 12)" />
+            <circle class="sp__hub-fill" cx="150" cy="12" r="10" transform="rotate(-90 150 12)" />
+            <circle class="sp__hub-fill" cx="230" cy="12" r="10" transform="rotate(-90 230 12)" />
+            <circle class="sp__dot" cx="70" cy="12" r="0" />
+            <circle class="sp__dot" cx="150" cy="12" r="0" />
+            <circle class="sp__dot" cx="230" cy="12" r="0" />
+          </g>
+        </svg>
+        <ul class="sp__labels">
+          <li>Copia</li>
+          <li>Invio a PACS</li>
+          <li>Pulizia</li>
+        </ul>
+        <p class="status" id="phase-label">Preparazione…</p>
+        <p class="muted mono" id="phase-detail"></p>
       </div>
+
       <div class="row">
         <span class="ok" id="send-ok">Success: 0</span>
         <span class="err" id="send-err">Error: 0</span>

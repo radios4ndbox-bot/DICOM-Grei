@@ -138,18 +138,67 @@ select {
 .tree li { padding: 3px 0; color: var(--muted); }
 .tree li b { color: var(--ink); }
 
-.bar {
-  height: 12px;
-  border-radius: 999px;
-  background: #e2eef1;
-  overflow: hidden;
-  margin: 8px 0;
-}
-.bar.big { height: 20px; }
-.fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00d7ad, #00b6cd); transition: width 0.3s ease; }
-
-#phase-label { margin-bottom: 6px; }
 #pt-last, #pt-first { text-transform: uppercase; }
+
+/* ---- stepped progress (Copia -> Invio a PACS -> Pulizia) -------------- */
+.progress {
+  --sp-primary: #00a0bd;
+  --sp-disabled: #c3d6da;
+  --sp-node-bg: #ffffff;
+  max-width: 360px;
+  margin: 10px 0 4px;
+}
+.progress .sp {
+  display: block;
+  width: 100%;
+  height: 30px;
+  overflow: visible;
+}
+.progress .sp__bar,
+.progress .sp__bar-fill { stroke-width: 4; stroke-linecap: round; }
+.progress .sp__bar { stroke: var(--sp-disabled); }
+.progress .sp__hub,
+.progress .sp__hub-fill { stroke-width: 2.5; fill: none; }
+.progress .sp__hub { stroke: var(--sp-disabled); fill: var(--sp-node-bg); }
+.progress .sp__hub--done {
+  r: 10px;
+  transition: r 0.2s cubic-bezier(0, 0, 0.33, 1.67);
+}
+.progress .sp__bar-fill {
+  stroke: var(--sp-primary);
+  stroke-dasharray: 40 40;
+  stroke-dashoffset: 40;
+  transition: stroke-dashoffset 0.25s linear;
+}
+.progress .sp__hub-fill {
+  stroke: var(--sp-primary);
+  stroke-dasharray: 0 62.8 0;
+  visibility: hidden;
+}
+.progress .sp__hub-fill--done {
+  stroke-dasharray: 31.4 0 31.4;
+  transition: all 0.2s 0.2s ease-out;
+  visibility: visible;
+}
+.progress .sp__dot { fill: var(--sp-primary); }
+.progress .sp__dot--done {
+  r: 4px;
+  transition: r 0.2s cubic-bezier(0, 0, 0.33, 1.67);
+  transition-delay: 0.4s;
+}
+.progress .sp__labels {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.progress .sp__labels li:nth-child(1) { text-align: left; }
+.progress .sp__labels li:nth-child(2) { text-align: center; }
+.progress .sp__labels li:nth-child(3) { text-align: right; }
+.progress .status { text-align: center; font-weight: 600; margin-top: 12px; }
+.progress #phase-detail { text-align: center; margin-top: 2px; }
 
 .log {
   height: 300px;

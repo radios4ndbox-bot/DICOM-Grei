@@ -11,10 +11,8 @@ const TYPE_MAP = {
 
 const DRIVE_LABEL = { 2: 'USB', 5: 'CD/DVD/ISO' };
 
-// pesi delle fasi sulla barra unica
-const W_COPY = 48;   // 0..48
-const W_SEND = 44;   // 48..92
-const W_TAIL = 8;    // 92..100 (pulizia)
+// step della barra: 0 = Copia, 1 = Invio a PACS, 2 = Pulizia
+const SP_STATUS = ['Copia in locale…', 'Invio a Synapse…', 'Pulizia cartella…'];
 
 const state = {
   drives: [],
@@ -36,12 +34,28 @@ function showStep(name) {
   });
 }
 
-function setBar(pct, label, detail) {
-  const p = Math.max(0, Math.min(100, Math.round(pct)));
-  $('overall-fill').style.width = p + '%';
-  $('overall-pct').textContent = p + '%';
-  if (label != null) $('phase-label').textContent = label;
-  if (detail != null) $('phase-detail').textContent = detail;
+// step: indice 0..2 ; frac: avanzamento 0..1 dentro lo step
+function setProgress(step, frac, opts) {
+  opts = opts || {};
+  frac = Math.max(0, Math.min(1, frac));
+  const fills = document.querySelectorAll('.progress .sp__bar-fill');
+  const hubs = document.querySelectorAll('.progress .sp__hub');
+  const hubFills = document.querySelectorAll('.progress .sp__hub-fill');
+  const dots = document.querySelectorAll('.progress .sp__dot');
+
+  fills.forEach((el, i) => {
+    const f = i < step ? 1 : i === step ? frac : 0;
+    el.style.strokeDashoffset = String(40 * (1 - f));
+  });
+  [0, 1, 2].forEach((i) => {
+    const done = i < step || (i === step && frac >= 1);
+    hubs[i].classList.toggle('sp__hub--done', done);
+    hubFills[i].classList.toggle('sp__hub-fill--done', done);
+    dots[i].classList.toggle('sp__dot--done', done);
+  });
+
+  $('phase-label').textContent = opts.status || SP_STATUS[step] || '';
+  if (opts.detail != null) $('phase-detail').textContent = opts.detail;
 }
 
 // ---------------------------------------------------------------- STEP 1
@@ -153,7 +167,7 @@ async function startImport() {
   $('send-ok').textContent = 'Success: 0';
   $('send-err').textContent = 'Error: 0';
   $('copy-skipped').textContent = '';
-  setBar(0, 'Avvio…', '');
+  setProgress(0, 0, { status: 'Avvio…', detail: '' });
   showStep('transfer');
 
   let result;
@@ -161,7 +175,7 @@ async function startImport() {
     result = await window.api.runImport({ plan: state.effective, iso: state.prepared.iso });
   } catch (err) {
     $('log').textContent += '\nERRORE: ' + err.message + '\n';
-    setBar(100, 'Errore durante il trasferimento', '');
+    $('phase-label').textContent = 'Errore durante il trasferimento';
     $('sum-note').textContent = err.message;
     $('summary').classList.remove('hidden');
     $('btn-restart').classList.remove('hidden');
@@ -172,26 +186,19 @@ async function startImport() {
 
 window.api.onProgress((d) => {
   if (d.phase === 'copy') {
-    const done = d.copied + d.skipped;
-    setBar(
-      d.total ? (W_COPY * done) / d.total : 0,
-      'Copia in locale…',
-      `${d.copied}/${d.total} file${d.current ? ' · ' + d.current : ''}`
-    );
+    setProgress(0, d.total ? (d.copied + d.skipped) / d.total : 0, {
+      detail: `${d.copied}/${d.total} file${d.current ? ' · ' + d.current : ''}`,
+    });
     $('copy-skipped').textContent = d.skipped ? `${d.skipped} saltati` : '';
   } else if (d.phase === 'send') {
-    setBar(
-      W_COPY + (d.total ? (W_SEND * d.sent) / d.total : 0),
-      'Invio a Synapse…',
-      `${d.sent}/${d.total} file`
-    );
+    setProgress(1, d.total ? d.sent / d.total : 0, { detail: `${d.sent}/${d.total} file` });
     $('send-ok').textContent = 'Success: ' + d.success;
     $('send-err').textContent = 'Error: ' + d.failed;
   } else if (d.phase === 'cleanup') {
     if (d.state === 'start') {
-      setBar(W_COPY + W_SEND + W_TAIL / 2, 'Pulizia cartella…', '');
+      setProgress(2, 0.5, { status: 'Pulizia cartella…', detail: '' });
     } else {
-      setBar(100, 'Completato', '');
+      setProgress(2, 1, { status: 'Completato', detail: '' });
       $('cleanup-status').textContent =
         'Staging svuotato' + (d.result && d.result.isoDismounted ? ' · ISO smontata.' : '.');
       $('btn-cleanup').disabled = true;
@@ -209,8 +216,10 @@ function onImportDone(result) {
   state.finished = true;
   const s = result.send || {};
 
-  setBar(W_COPY + W_SEND, 'Trasferimento completato — pronto per la pulizia',
-    `${s.success || 0} inviati · ${s.failed || 0} falliti`);
+  setProgress(1, 1, {
+    status: 'Trasferimento completato — premi «Pulisci»',
+    detail: `${s.success || 0} inviati · ${s.failed || 0} falliti`,
+  });
 
   $('sum-ok').textContent = s.success || 0;
   $('sum-err').textContent = s.failed || 0;
