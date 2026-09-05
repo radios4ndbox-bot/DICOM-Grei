@@ -11,10 +11,9 @@ const { stageFiles } = require('./copyStage');
 const { sendStoreScu } = require('./sendStoreScu');
 const { cleanup } = require('./cleanup');
 
-const SPLASH_MIN_MS = 4200;
-
 let mainWindow = null;
 let splashWindow = null;
+let mainRevealed = false;
 
 function fileUrl(relFromMain) {
   return url.format({
@@ -26,22 +25,39 @@ function fileUrl(relFromMain) {
 
 function createSplash() {
   splashWindow = new BrowserWindow({
-    width: 480,
-    height: 480,
+    width: 520,
+    height: 560,
     frame: false,
     transparent: true,
     resizable: false,
     center: true,
     alwaysOnTop: true,
     show: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      preload: path.join(__dirname, 'splashPreload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
   splashWindow.loadURL(fileUrl('../renderer/splash.html'));
+
+  splashWindow.on('closed', () => {
+    splashWindow = null;
+    // splash chiusa senza premere "Import": non c'è nulla da mostrare
+    if (!mainRevealed) app.quit();
+  });
+}
+
+// Chiude la splash e mostra la finestra principale. Chiamata solo su "Import".
+function revealMain() {
+  if (mainRevealed) return;
+  mainRevealed = true;
+  if (mainWindow) mainWindow.show();
+  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.destroy();
+  splashWindow = null;
 }
 
 function createMain() {
-  const shownAt = Date.now();
-
   mainWindow = new BrowserWindow({
     width: 1040,
     height: 720,
@@ -61,19 +77,12 @@ function createMain() {
   mainWindow.removeMenu();
   mainWindow.loadURL(fileUrl('../renderer/index.html'));
 
-  mainWindow.once('ready-to-show', () => {
-    const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - shownAt));
-    setTimeout(() => {
-      if (splashWindow && !splashWindow.isDestroyed()) splashWindow.destroy();
-      splashWindow = null;
-      mainWindow.show();
-    }, wait);
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
+
+ipcMain.on('splash-confirm', () => revealMain());
 
 // ---------------------------------------------------------------- IPC
 
