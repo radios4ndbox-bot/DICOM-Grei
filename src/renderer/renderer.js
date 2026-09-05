@@ -140,7 +140,99 @@ function renderStudy() {
   $('clf-reasoning').textContent = p.reasoning;
   $('clf-tree').innerHTML = p.tree.map((t) => `<li><b>${t.name}</b> — ${t.count} file</li>`).join('');
   $('override').value = '';
+
+  loadPreview(s && s.samplePath);
 }
+
+// ---------------------------------------------------------------- reader interno
+
+const viewer = { bright: 1, contrast: 1, dragging: false, x0: 0, y0: 0 };
+
+function viewerMessage(text) {
+  $('dcm-canvas').classList.remove('ready');
+  $('viewer-msg').textContent = text;
+  $('viewer-msg').style.display = '';
+  $('viewer-meta').textContent = '';
+}
+
+function applyViewerFilter() {
+  $('dcm-canvas').style.filter = `brightness(${viewer.bright}) contrast(${viewer.contrast})`;
+}
+
+async function loadPreview(samplePath) {
+  if (!samplePath) return viewerMessage('Nessun file DICOM leggibile su questo supporto.');
+  viewerMessage('Caricamento anteprima…');
+  let r;
+  try {
+    r = await window.api.previewImage(samplePath);
+  } catch (err) {
+    return viewerMessage('Errore anteprima: ' + err.message);
+  }
+  if (!r || r.unsupported) {
+    const map = {
+      compressed: 'Immagine compressa (JPEG/JPEG2000/RLE): anteprima non disponibile.',
+      'no-pixel-data': 'Il file non contiene dati immagine.',
+      'parse-error': 'File non interpretabile.',
+      'read-error': 'File non leggibile.',
+      truncated: 'Dati immagine incompleti.',
+    };
+    return viewerMessage((map[r && r.unsupported] || 'Anteprima non disponibile.') +
+      (r && r.rows ? ` (${r.cols}×${r.rows})` : ''));
+  }
+
+  const cv = $('dcm-canvas');
+  const cx = cv.getContext('2d');
+  cv.width = r.cols;
+  cv.height = r.rows;
+  const img = cx.createImageData(r.cols, r.rows);
+
+  if (r.gray) {
+    const g = new Uint8Array(r.gray);
+    for (let i = 0, j = 0; i < g.length; i++, j += 4) {
+      img.data[j] = img.data[j + 1] = img.data[j + 2] = g[i];
+      img.data[j + 3] = 255;
+    }
+  } else if (r.rgb) {
+    const s = new Uint8Array(r.rgb);
+    for (let i = 0, j = 0; j < img.data.length; i += 3, j += 4) {
+      img.data[j] = s[i];
+      img.data[j + 1] = s[i + 1];
+      img.data[j + 2] = s[i + 2];
+      img.data[j + 3] = 255;
+    }
+  }
+  cx.putImageData(img, 0, 0);
+
+  viewer.bright = 1;
+  viewer.contrast = 1;
+  applyViewerFilter();
+  $('viewer-msg').style.display = 'none';
+  cv.classList.add('ready');
+  $('viewer-meta').textContent = `${r.cols}×${r.rows} · ${r.photometric || ''}`.trim();
+}
+
+(function bindViewerInteraction() {
+  const cv = $('dcm-canvas');
+  cv.addEventListener('mousedown', (e) => {
+    viewer.dragging = true;
+    viewer.x0 = e.clientX;
+    viewer.y0 = e.clientY;
+  });
+  window.addEventListener('mouseup', () => (viewer.dragging = false));
+  window.addEventListener('mousemove', (e) => {
+    if (!viewer.dragging) return;
+    viewer.bright = Math.max(0.2, Math.min(3, viewer.bright + (e.clientX - viewer.x0) * 0.005));
+    viewer.contrast = Math.max(0.2, Math.min(3, viewer.contrast - (e.clientY - viewer.y0) * 0.005));
+    viewer.x0 = e.clientX;
+    viewer.y0 = e.clientY;
+    applyViewerFilter();
+  });
+  cv.addEventListener('dblclick', () => {
+    viewer.bright = 1;
+    viewer.contrast = 1;
+    applyViewerFilter();
+  });
+})();
 
 $('btn-back-media').addEventListener('click', () => showStep('media'));
 $('btn-start').addEventListener('click', startImport);
@@ -267,6 +359,7 @@ $('btn-restart').addEventListener('click', () => {
   $('cleanup-status').textContent = '';
   $('btn-cleanup').disabled = false;
   $('btn-to-study').disabled = true;
+  viewerMessage('Nessuna immagine caricata.');
   showStep('media');
 });
 

@@ -74,6 +74,7 @@ function parseOne(file) {
     studyDescription: ds.string('x00081030') || ds.string('x0008103e') || '',
     accession: ds.string('x00080050') || '',
     sampleFile: path.basename(file),
+    samplePath: file,
   };
 }
 

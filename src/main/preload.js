@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   detectMedia: () => ipcRenderer.invoke('detect-media'),
   prepareSource: (drive) => ipcRenderer.invoke('prepare-source', drive),
   classify: (sourcePath) => ipcRenderer.invoke('classify', sourcePath),
+  previewImage: (absPath) => ipcRenderer.invoke('preview-image', absPath),
   runImport: (payload) => ipcRenderer.invoke('run-import', payload),
   cleanup: (opts) => ipcRenderer.invoke('cleanup', opts),
 

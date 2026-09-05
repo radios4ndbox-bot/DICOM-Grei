@@ -29,10 +29,7 @@ body {
   background: var(--panel);
 }
 .app-header h1 { font-size: 16px; margin: 0; flex: 1; }
-.logo-dot {
-  width: 18px; height: 18px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #00d7ad, #0093ab);
-}
+.logo-globe { width: 24px; height: 24px; display: block; }
 .pacs-badge {
   font: 12px/1 "Consolas", monospace;
   color: var(--teal-d);
@@ -56,8 +53,74 @@ body {
 .steps span.active { background: var(--teal); color: #fff; }
 .steps span.done { background: #cdeede; color: var(--ok); }
 
-main { padding: 8px 22px 28px; }
-.step { max-width: 780px; }
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 22px;
+  padding: 8px 22px 44px;
+  align-items: start;
+}
+main { padding: 0; }
+.step { max-width: 720px; }
+
+/* ---- preview / reader interno --------------------------------------- */
+.viewer {
+  position: sticky;
+  top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.viewer__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+  font-size: 13px;
+}
+.viewer__stage {
+  position: relative;
+  background: #0b1417;
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#dcm-canvas {
+  max-width: 100%;
+  max-height: 460px;
+  image-rendering: pixelated;
+  display: none;
+  cursor: crosshair;
+}
+#dcm-canvas.ready { display: block; }
+.viewer__msg {
+  color: #8fa3a8;
+  font-size: 13px;
+  padding: 0 20px;
+  text-align: center;
+}
+.viewer__hint { padding: 8px 14px; font-size: 11px; border-top: 1px solid var(--line); }
+
+@media (max-width: 1000px) {
+  .workspace { grid-template-columns: 1fr; }
+  .viewer { position: static; }
+}
+
+.copyright {
+  position: fixed;
+  right: 14px;
+  bottom: 8px;
+  margin: 0;
+  font-size: 11px;
+  color: #a9bcc2;
+  pointer-events: none;
+}
 .hidden { display: none !important; }
 
 h2 { font-size: 15px; margin: 4px 0 14px; }

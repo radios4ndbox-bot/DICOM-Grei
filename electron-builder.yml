@@ -13,11 +13,18 @@ files:
   - package.json
   - node_modules/dicom-parser/**/*
 
+# Per rendere l'app autosufficiente: crea ./resources/dcmtk/bin con
+# storescu.exe + le sue DLL, poi aggiungi qui sotto (electron-builder
+# fallisce se `from` non esiste, quindi tienilo commentato finché la
+# cartella non c'è). config.js cerca già resources/dcmtk/bin/storescu.exe.
+# extraResources:
+#   - from: resources/dcmtk
+#     to: dcmtk
+
 win:
   target:
     - nsis
-  # Drop a build/icon.ico (BMP-format, >= 256x256) and uncomment:
-  # icon: build/icon.ico
+  icon: build/icon.ico
 
 nsis:
   oneClick: false

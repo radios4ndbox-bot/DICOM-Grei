@@ -2,13 +2,14 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:" />
   <title>DICOM Import Tool</title>
+  <link rel="icon" type="image/svg+xml" href="assets/globe.svg" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="app-header">
-    <span class="logo-dot"></span>
+    <img class="logo-globe" src="assets/globe.svg" alt="" />
     <h1>DICOM Import Tool</h1>
     <span class="pacs-badge" id="pacs-badge">PACS @ 127.0.0.1:104</span>
   </header>
@@ -19,7 +20,8 @@
     <span data-step="transfer">3 · Trasferimento</span>
   </nav>
 
-  <main>
+  <div class="workspace">
+   <main>
     <!-- STEP 1 -->
     <section id="step-media" class="step">
       <div class="row">
@@ -127,7 +129,22 @@
       </div>
       <p id="cleanup-status" class="muted"></p>
     </section>
-  </main>
+   </main>
+
+   <aside class="viewer" id="viewer">
+     <div class="viewer__head">
+       <span>Anteprima</span>
+       <span id="viewer-meta" class="muted mono"></span>
+     </div>
+     <div class="viewer__stage" id="viewer-stage">
+       <canvas id="dcm-canvas" width="16" height="16"></canvas>
+       <p id="viewer-msg" class="viewer__msg">Nessuna immagine caricata.</p>
+     </div>
+     <p class="viewer__hint muted">Trascina sull'immagine per luminosità / contrasto · doppio clic per reimpostare</p>
+   </aside>
+  </div>
+
+  <p class="copyright">© 2026 StructuRad. All rights reserved. Powered by RadioPako.</p>
 
   <script src="renderer.js"></script>
 </body>

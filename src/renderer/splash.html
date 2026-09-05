@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>DICOM Importer — Splash</title>
+<link rel="icon" type="image/svg+xml" href="assets/globe.svg" />
 <style>
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -18,6 +19,16 @@
     background: radial-gradient(120% 120% at 50% 40%, #f4fbfa 0%, #e9f5ff 70%, #dfeefc 100%);
     font-family: "Sora", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     overflow: hidden;
+    transition: opacity 0.45s ease;
+  }
+  body.fade-out { opacity: 0; }
+
+  .splash-credit {
+    position: fixed;
+    right: 12px;
+    bottom: 8px;
+    font-size: 11px;
+    color: #a9bcc2;
   }
 
   .stage { width: min(74vw, 520px); aspect-ratio: 1 / 1; }
@@ -206,6 +217,8 @@
     <span>Import</span>
   </button>
 
+  <p class="splash-credit">© 2026 StructuRad. All rights reserved. Powered by RadioPako.</p>
+
   <script>
     (function () {
       var btn = document.getElementById('import-btn');
@@ -214,7 +227,10 @@
       btn.addEventListener('click', function () {
         btn.disabled = true;
         btn.querySelector('span').textContent = 'Avvio…';
-        if (window.splash && window.splash.confirm) window.splash.confirm();
+        document.body.classList.add('fade-out'); // dissolvenza prima di aprire il programma
+        setTimeout(function () {
+          if (window.splash && window.splash.confirm) window.splash.confirm();
+        }, 430);
       });
     })();
   </script>
