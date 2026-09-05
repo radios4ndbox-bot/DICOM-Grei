@@ -15,10 +15,8 @@
 
   <nav class="steps" id="stepnav">
     <span data-step="media">1 · Supporto</span>
-    <span data-step="structure">2 · Struttura</span>
-    <span data-step="copy">3 · Copia</span>
-    <span data-step="send">4 · Invio</span>
-    <span data-step="summary">5 · Riepilogo</span>
+    <span data-step="study">2 · Studio</span>
+    <span data-step="transfer">3 · Trasferimento</span>
   </nav>
 
   <main>
@@ -30,13 +28,26 @@
       </div>
       <ul id="drive-list" class="cards"></ul>
       <div class="row end">
-        <button id="btn-to-structure" class="primary" disabled>Avanti</button>
+        <button id="btn-to-study" class="primary" disabled>Avanti</button>
       </div>
     </section>
 
     <!-- STEP 2 -->
-    <section id="step-structure" class="step hidden">
+    <section id="step-study" class="step hidden">
       <p id="prepare-note" class="note hidden"></p>
+
+      <h2>Paziente ed esame</h2>
+      <div class="panel" id="study-panel">
+        <div class="kv"><span>Cognome</span><strong id="pt-last">—</strong></div>
+        <div class="kv"><span>Nome</span><strong id="pt-first">—</strong></div>
+        <div class="kv"><span>Nato/a il</span><strong id="pt-birth">—</strong></div>
+        <div class="kv"><span>Esame</span><strong id="st-modality">—</strong></div>
+        <div class="kv"><span>Descrizione</span><strong id="st-desc">—</strong></div>
+        <div class="kv"><span>Data esame</span><strong id="st-date">—</strong></div>
+        <p id="study-src" class="muted"></p>
+      </div>
+
+      <h2>Struttura del supporto</h2>
       <div class="panel">
         <div class="kv"><span>Tipo rilevato</span><strong id="clf-type">—</strong></div>
         <div class="kv"><span>Scan pattern</span><code id="clf-pattern">—</code></div>
@@ -44,6 +55,7 @@
         <p id="clf-reasoning" class="muted"></p>
         <ul id="clf-tree" class="tree"></ul>
       </div>
+
       <div class="row">
         <label for="override">Forza tipo</label>
         <select id="override">
@@ -60,42 +72,33 @@
       </div>
     </section>
 
-    <!-- STEP 3 -->
-    <section id="step-copy" class="step hidden">
-      <h2>Copia in <code>C:\tmp\dicom_import</code></h2>
-      <div class="bar"><div id="copy-fill" class="fill"></div></div>
+    <!-- STEP 3 — unified progress -->
+    <section id="step-transfer" class="step hidden">
+      <h2 id="phase-label">Preparazione…</h2>
+      <div class="bar big"><div id="overall-fill" class="fill"></div></div>
       <div class="row">
-        <span id="copy-count" class="mono">0 / 0</span>
-        <span id="copy-skipped" class="warn"></span>
+        <span id="overall-pct" class="mono">0%</span>
+        <span id="phase-detail" class="muted mono"></span>
       </div>
-      <p id="copy-current" class="muted mono"></p>
-    </section>
-
-    <!-- STEP 4 -->
-    <section id="step-send" class="step hidden">
-      <h2>Invio a Synapse (storescu)</h2>
-      <div class="bar"><div id="send-fill" class="fill"></div></div>
       <div class="row">
-        <span id="send-count" class="mono">0 / 0</span>
         <span class="ok" id="send-ok">Success: 0</span>
         <span class="err" id="send-err">Error: 0</span>
+        <span class="warn" id="copy-skipped"></span>
       </div>
-      <pre id="log" class="log"></pre>
-    </section>
 
-    <!-- STEP 5 -->
-    <section id="step-summary" class="step hidden">
-      <h2>Riepilogo</h2>
-      <div class="panel">
+      <pre id="log" class="log"></pre>
+
+      <div class="panel hidden" id="summary">
         <div class="kv"><span>Inviati con successo</span><strong id="sum-ok">0</strong></div>
         <div class="kv"><span>Falliti</span><strong id="sum-err">0</strong></div>
         <div class="kv"><span>Saltati in copia</span><strong id="sum-skip">0</strong></div>
         <div class="kv"><span>Associazione</span><strong id="sum-assoc">—</strong></div>
         <p id="sum-note" class="muted"></p>
       </div>
-      <div class="row between">
-        <button id="btn-cleanup" class="danger">Pulisci C:\tmp\dicom_import</button>
-        <button id="btn-restart" class="ghost">Nuova importazione</button>
+
+      <div class="row between" id="finish-actions">
+        <button id="btn-cleanup" class="danger hidden">Pulisci C:\tmp\dicom_import</button>
+        <button id="btn-restart" class="ghost hidden">Nuova importazione</button>
       </div>
       <p id="cleanup-status" class="muted"></p>
     </section>

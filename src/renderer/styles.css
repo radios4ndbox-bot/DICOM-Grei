@@ -120,9 +120,10 @@ select {
   background: var(--panel);
   padding: 16px 18px;
 }
-.kv { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.kv { display: flex; justify-content: space-between; gap: 24px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
 .kv:last-of-type { border-bottom: 0; }
-.kv span { color: var(--muted); }
+.kv span { color: var(--muted); white-space: nowrap; }
+.kv strong { text-align: right; }
 
 .note {
   background: #eef7ff;
@@ -144,7 +145,11 @@ select {
   overflow: hidden;
   margin: 8px 0;
 }
-.fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00d7ad, #00b6cd); transition: width 0.2s; }
+.bar.big { height: 20px; }
+.fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00d7ad, #00b6cd); transition: width 0.3s ease; }
+
+#phase-label { margin-bottom: 6px; }
+#pt-last, #pt-first { text-transform: uppercase; }
 
 .log {
   height: 300px;

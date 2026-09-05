@@ -7,6 +7,7 @@ const url = require('url');
 const { detectMedia } = require('./detectMedia');
 const { prepareSource } = require('./isoZip');
 const { classify } = require('./classify');
+const { readStudyInfo } = require('./dicomInfo');
 const { stageFiles } = require('./copyStage');
 const { sendStoreScu } = require('./sendStoreScu');
 const { cleanup } = require('./cleanup');
@@ -90,7 +91,16 @@ ipcMain.handle('detect-media', () => detectMedia());
 
 ipcMain.handle('prepare-source', (_e, drive) => prepareSource(drive));
 
-ipcMain.handle('classify', (_e, sourcePath) => classify(sourcePath));
+ipcMain.handle('classify', (_e, sourcePath) => {
+  const plan = classify(sourcePath);
+  let study = null;
+  try {
+    study = readStudyInfo(plan.dataRoot, plan);
+  } catch {
+    study = null;
+  }
+  return { ...plan, study };
+});
 
 ipcMain.handle('run-import', async (_e, { plan, iso }) => {
   const emitProgress = (d) => mainWindow && mainWindow.webContents.send('progress', d);
@@ -110,7 +120,13 @@ ipcMain.handle('run-import', async (_e, { plan, iso }) => {
   return { copy, send, iso: iso || null };
 });
 
-ipcMain.handle('cleanup', (_e, opts) => cleanup(opts || {}));
+ipcMain.handle('cleanup', async (_e, opts) => {
+  const emitProgress = (d) => mainWindow && mainWindow.webContents.send('progress', d);
+  emitProgress({ phase: 'cleanup', state: 'start' });
+  const result = await cleanup(opts || {});
+  emitProgress({ phase: 'cleanup', state: 'done', result });
+  return result;
+});
 
 // ---------------------------------------------------------------- lifecycle
 
