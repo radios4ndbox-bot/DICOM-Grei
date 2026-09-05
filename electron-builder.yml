@@ -13,13 +13,13 @@ files:
   - package.json
   - node_modules/dicom-parser/**/*
 
-# Per rendere l'app autosufficiente: crea ./resources/dcmtk/bin con
-# storescu.exe + le sue DLL, poi aggiungi qui sotto (electron-builder
-# fallisce se `from` non esiste, quindi tienilo commentato finché la
-# cartella non c'è). config.js cerca già resources/dcmtk/bin/storescu.exe.
-# extraResources:
-#   - from: resources/dcmtk
-#     to: dcmtk
+# App autosufficiente: resources/dcmtk/bin contiene storescu.exe (DCMTK
+# 3.7.0 win64) + le sue DLL (dcmnet, dcmdata, dcmtls, oflog, ofstd,
+# oficonv). Vengono copiate in <resources>/dcmtk; config.js risolve
+# process.resourcesPath/dcmtk/bin/storescu.exe.
+extraResources:
+  - from: resources/dcmtk
+    to: dcmtk
 
 win:
   target:
