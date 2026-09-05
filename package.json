@@ -1,0 +1,17 @@
+{
+  "name": "dicom-import-tool",
+  "version": "0.1.0",
+  "description": "Importazione automatica di studi DICOM da supporti fisici verso PACS Synapse Fujifilm",
+  "main": "src/main/main.js",
+  "author": "Desio",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

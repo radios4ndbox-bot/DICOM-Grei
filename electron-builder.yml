@@ -1,0 +1,28 @@
+appId: it.desio.dicomimporttool
+productName: DICOM Import Tool
+copyright: Desio
+
+asar: false
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - package.json
+
+win:
+  target:
+    - nsis
+  # Drop a build/icon.ico (BMP-format, >= 256x256) and uncomment:
+  # icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: ${productName}-Setup-${version}.${ext}

@@ -1,0 +1,160 @@
+:root {
+  --bg: #f4fbfa;
+  --panel: #ffffff;
+  --ink: #1a1a1a;
+  --muted: #667;
+  --line: #dbe7ec;
+  --teal: #00b6cd;
+  --teal-d: #0093ab;
+  --ok: #0a8a4f;
+  --err: #c0392b;
+  --warn: #b8860b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.app-header h1 { font-size: 16px; margin: 0; flex: 1; }
+.logo-dot {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #00d7ad, #0093ab);
+}
+.pacs-badge {
+  font: 12px/1 "Consolas", monospace;
+  color: var(--teal-d);
+  border: 1px solid var(--line);
+  padding: 5px 9px;
+  border-radius: 6px;
+}
+
+.steps {
+  display: flex;
+  gap: 6px;
+  padding: 12px 22px;
+  font-size: 12px;
+}
+.steps span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #e7f1f4;
+  color: var(--muted);
+}
+.steps span.active { background: var(--teal); color: #fff; }
+.steps span.done { background: #cdeede; color: var(--ok); }
+
+main { padding: 8px 22px 28px; }
+.step { max-width: 780px; }
+.hidden { display: none !important; }
+
+h2 { font-size: 15px; margin: 4px 0 14px; }
+
+.row { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+.row.end { justify-content: flex-end; }
+.row.between { justify-content: space-between; }
+
+button {
+  font: inherit;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--teal); border-color: var(--teal-d); color: #fff; }
+button.primary:hover:not(:disabled) { background: var(--teal-d); }
+button.ghost { background: transparent; }
+button.danger { background: #fff; border-color: var(--err); color: var(--err); }
+
+select {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.muted { color: var(--muted); font-size: 13px; }
+.mono { font-family: "Consolas", monospace; font-size: 13px; }
+.ok { color: var(--ok); font-weight: 600; }
+.err { color: var(--err); font-weight: 600; }
+.warn { color: var(--warn); font-weight: 600; }
+
+.cards { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
+.cards li {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.cards li.sel { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(0, 182, 205, 0.2); }
+.cards .tag {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e7f1f4;
+  color: var(--teal-d);
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 16px 18px;
+}
+.kv { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.kv:last-of-type { border-bottom: 0; }
+.kv span { color: var(--muted); }
+
+.note {
+  background: #eef7ff;
+  border: 1px solid #cfe4f6;
+  color: #245;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.tree { list-style: none; padding: 0; margin: 10px 0 0; font-family: "Consolas", monospace; font-size: 13px; }
+.tree li { padding: 3px 0; color: var(--muted); }
+.tree li b { color: var(--ink); }
+
+.bar {
+  height: 12px;
+  border-radius: 999px;
+  background: #e2eef1;
+  overflow: hidden;
+  margin: 8px 0;
+}
+.fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00d7ad, #00b6cd); transition: width 0.2s; }
+
+.log {
+  height: 300px;
+  overflow: auto;
+  background: #0f1c1f;
+  color: #b9f0e6;
+  padding: 12px;
+  border-radius: 10px;
+  font: 12px/1.5 "Consolas", monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+code { background: #eef4f6; padding: 1px 5px; border-radius: 4px; font-family: "Consolas", monospace; }
