@@ -57,7 +57,13 @@ function formatDate(d) {
   return `${d.slice(6, 8)}/${d.slice(4, 6)}/${d.slice(0, 4)}`;
 }
 
+// I metadati stanno nei primi KB: non ha senso caricare in RAM un file enorme
+// (o non-file) trovato su un supporto non fidato solo per leggere l'anagrafica.
+const MAX_INFO_BYTES = 256 * 1024 * 1024;
+
 function parseOne(file) {
+  const st = fs.statSync(file);
+  if (!st.isFile() || st.size > MAX_INFO_BYTES) throw new Error('file non idoneo');
   const buf = fs.readFileSync(file);
   const ds = dicomParser.parseDicom(buf);
   const name = formatName(ds.string('x00100010'));

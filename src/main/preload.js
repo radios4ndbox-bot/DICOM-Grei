@@ -11,10 +11,12 @@ function subscribe(channel, cb) {
 contextBridge.exposeInMainWorld('api', {
   detectMedia: () => ipcRenderer.invoke('detect-media'),
   prepareSource: (drive) => ipcRenderer.invoke('prepare-source', drive),
-  classify: (sourcePath) => ipcRenderer.invoke('classify', sourcePath),
+  // Il main tiene lo stato autorevole (sorgente preparata, piano di
+  // classificazione). Qui passano solo scelte dell'utente, mai percorsi.
+  classify: () => ipcRenderer.invoke('classify'),
   previewImage: (absPath) => ipcRenderer.invoke('preview-image', absPath),
-  runImport: (payload) => ipcRenderer.invoke('run-import', payload),
-  cleanup: (opts) => ipcRenderer.invoke('cleanup', opts),
+  runImport: (type) => ipcRenderer.invoke('run-import', { type: type || '' }),
+  cleanup: () => ipcRenderer.invoke('cleanup'),
 
   onProgress: (cb) => subscribe('progress', cb),
   onLog: (cb) => subscribe('log', cb),

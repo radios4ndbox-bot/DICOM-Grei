@@ -2,6 +2,15 @@
 
 const $ = (id) => document.getElementById(id);
 
+// Etichette di volume, nomi di file e di cartella arrivano da un supporto
+// paziente: non sono fidati. Si inseriscono sempre come testo, mai come HTML.
+function el(tag, className, text) {
+  const n = document.createElement(tag);
+  if (className) n.className = className;
+  if (text != null) n.textContent = String(text);
+  return n;
+}
+
 const TYPE_MAP = {
   A: { pattern: 'MP*', strategy: 'keep' },
   B: { pattern: '*.dcm', strategy: 'rename' },
@@ -80,9 +89,11 @@ async function detect() {
   $('detect-status').textContent = `${state.drives.length} supporto/i rilevato/i.`;
   for (const d of state.drives) {
     const li = document.createElement('li');
-    li.innerHTML =
-      `<span class="tag">${DRIVE_LABEL[d.driveType] || d.kind}</span>` +
-      `<b>${d.caption}</b><span class="muted">${d.volumeName || 'senza nome'}</span>`;
+    li.append(
+      el('span', 'tag', DRIVE_LABEL[d.driveType] || d.kind),
+      el('b', null, d.caption),
+      el('span', 'muted', d.volumeName || 'senza nome')
+    );
     li.addEventListener('click', () => {
       document.querySelectorAll('#drive-list li').forEach((x) => x.classList.remove('sel'));
       li.classList.add('sel');
@@ -99,7 +110,7 @@ $('btn-to-study').addEventListener('click', async () => {
   $('detect-status').textContent = 'Lettura supporto e file DICOM…';
   try {
     state.prepared = await window.api.prepareSource(state.drive);
-    state.plan = await window.api.classify(state.prepared.sourcePath);
+    state.plan = await window.api.classify();
   } catch (err) {
     $('detect-status').textContent = 'Errore: ' + err.message;
     $('btn-to-study').disabled = false;
@@ -138,7 +149,13 @@ function renderStudy() {
   $('clf-pattern').textContent = p.pattern;
   $('clf-total').textContent = p.totalFiles;
   $('clf-reasoning').textContent = p.reasoning;
-  $('clf-tree').innerHTML = p.tree.map((t) => `<li><b>${t.name}</b> — ${t.count} file</li>`).join('');
+  const tree = $('clf-tree');
+  tree.textContent = '';
+  for (const t of p.tree) {
+    const li = document.createElement('li');
+    li.append(el('b', null, t.name), ` — ${Number(t.count) || 0} file`);
+    tree.appendChild(li);
+  }
   $('override').value = '';
 
   loadPreview(s && s.samplePath);
@@ -175,6 +192,8 @@ async function loadPreview(samplePath) {
       'parse-error': 'File non interpretabile.',
       'read-error': 'File non leggibile.',
       truncated: 'Dati immagine incompleti.',
+      'too-large': 'Immagine troppo grande per l’anteprima.',
+      'no-path': 'Percorso non consentito per l’anteprima.',
     };
     return viewerMessage((map[r && r.unsupported] || 'Anteprima non disponibile.') +
       (r && r.rows ? ` (${r.cols}×${r.rows})` : ''));
@@ -237,6 +256,7 @@ async function loadPreview(samplePath) {
 $('btn-back-media').addEventListener('click', () => showStep('media'));
 $('btn-start').addEventListener('click', startImport);
 
+// Solo per l'anteprima a schermo: il piano che conta lo ricostruisce il main.
 function buildEffectivePlan() {
   const p = state.plan;
   const forced = $('override').value;
@@ -264,7 +284,7 @@ async function startImport() {
 
   let result;
   try {
-    result = await window.api.runImport({ plan: state.effective, iso: state.prepared.iso });
+    result = await window.api.runImport($('override').value);
   } catch (err) {
     $('log').textContent += '\nERRORE: ' + err.message + '\n';
     $('phase-label').textContent = 'Errore durante il trasferimento';
@@ -344,7 +364,7 @@ $('btn-cleanup').addEventListener('click', async () => {
   if (!confirm('Svuotare C:\\tmp\\dicom_import' + (withIso ? " e smontare l'ISO" : '') + '?')) return;
   $('btn-cleanup').disabled = true;
   try {
-    await window.api.cleanup({ iso: $('btn-cleanup').dataset.iso || null });
+    await window.api.cleanup();
   } catch (err) {
     $('cleanup-status').textContent = 'Errore pulizia: ' + err.message;
     $('btn-cleanup').disabled = false;

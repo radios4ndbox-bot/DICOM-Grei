@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'" />
 <title>DICOM Importer — Splash</title>
 <link rel="icon" type="image/svg+xml" href="assets/globe.svg" />
 <style>
@@ -223,20 +225,6 @@
 
   <p class="splash-credit">© 2026 StructuRad. All rights reserved. Powered by RadioPako.</p>
 
-  <script>
-    (function () {
-      var btn = document.getElementById('import-btn');
-      // l'animazione del logo termina a ~6.1s: il pulsante compare subito dopo
-      setTimeout(function () { btn.classList.add('show'); }, 6300);
-      btn.addEventListener('click', function () {
-        btn.disabled = true;
-        btn.querySelector('span').textContent = 'Avvio…';
-        document.body.classList.add('fade-out'); // dissolvenza prima di aprire il programma
-        setTimeout(function () {
-          if (window.splash && window.splash.confirm) window.splash.confirm();
-        }, 430);
-      });
-    })();
-  </script>
+  <script src="splash.js"></script>
 </body>
 </html>

@@ -10,6 +10,7 @@ directories:
 
 files:
   - src/**/*
+  - build/icon.ico
   - package.json
   - node_modules/dicom-parser/**/*
 
@@ -25,6 +26,27 @@ win:
   target:
     - nsis
   icon: build/icon.ico
+
+  # ------------------------------------------------------------------
+  # FIRMA DIGITALE — unico modo per essere "fidati" da Windows Defender
+  # SmartScreen. Senza firma ogni nuova build è un binario sconosciuto e
+  # mostra "Windows ha protetto il PC".
+  #
+  # electron-builder firma automaticamente exe + installer se in CI sono
+  # presenti le variabili d'ambiente (GitHub Actions → repo secrets):
+  #   CSC_LINK            certificato .pfx in base64, oppure un URL
+  #   CSC_KEY_PASSWORD    password del .pfx
+  #
+  # Dal giugno 2023 le CA non rilasciano più .pfx per i certificati nuovi:
+  # la chiave deve stare su token HSM o su un servizio cloud. Con Azure
+  # Trusted Signing si usa invece:
+  #   azureSignOptions:
+  #     publisherName: "<nome esatto sul certificato>"
+  #     endpoint: https://<regione>.codesigning.azure.net
+  #     certificateProfileName: <profilo>
+  #     codeSigningAccountName: <account>
+  # più le variabili AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET.
+  # ------------------------------------------------------------------
 
 nsis:
   oneClick: false

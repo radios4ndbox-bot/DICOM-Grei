@@ -7,12 +7,23 @@ const path = require('path');
 const config = require('./config');
 const { detectMedia } = require('./detectMedia');
 
-function ps(command, timeout = 120000) {
+/**
+ * Esegue uno script PowerShell fisso. I percorsi NON vengono mai interpolati
+ * nel comando: passano come variabili d'ambiente e lo script le legge con
+ * $env:NOME. Così un file chiamato p.es. `evil$(calc).iso` su una chiavetta
+ * non può iniettare comandi (le stringhe "..." di PowerShell espandono $() e `).
+ */
+function ps(command, { env = {}, timeout = 120000 } = {}) {
   return new Promise((resolve, reject) => {
     execFile(
       'powershell',
       ['-NoProfile', '-NonInteractive', '-Command', command],
-      { windowsHide: true, timeout, maxBuffer: 1024 * 1024 * 16 },
+      {
+        windowsHide: true,
+        timeout,
+        maxBuffer: 1024 * 1024 * 16,
+        env: { ...process.env, ...env },
+      },
       (err, stdout, stderr) => {
         if (err) return reject(new Error((stderr || err.message || '').trim()));
         resolve(String(stdout || ''));
@@ -54,7 +65,9 @@ function findBucketDir(root, maxDepth = 5) {
 
 async function mountIso(isoPath) {
   const before = new Set((await detectMedia()).map((d) => d.caption));
-  await ps(`Mount-DiskImage -ImagePath ${JSON.stringify(isoPath)} | Out-Null`);
+  await ps('Mount-DiskImage -ImagePath $env:DIT_ISO -ErrorAction Stop | Out-Null', {
+    env: { DIT_ISO: isoPath },
+  });
 
   // Attendi che compaia la nuova lettera ottica (drivetype 5).
   let added = [];
@@ -71,19 +84,57 @@ async function mountIso(isoPath) {
 
 async function dismountIso(isoPath) {
   try {
-    await ps(`Dismount-DiskImage -ImagePath ${JSON.stringify(isoPath)} | Out-Null`);
+    await ps('Dismount-DiskImage -ImagePath $env:DIT_ISO -ErrorAction Stop | Out-Null', {
+      env: { DIT_ISO: isoPath },
+    });
     return true;
   } catch {
     return false;
   }
 }
 
+/**
+ * Difesa "zip slip": prima di estrarre, elenca i nomi delle voci e verifica
+ * che nessuna esca dalla cartella di destinazione (`..\..\`, percorsi assoluti,
+ * lettere di unità). Un archivio su un CD paziente non è fidato.
+ */
+async function assertZipEntriesSafe(zipPath, target) {
+  const out = await ps(
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem;' +
+      '$z=[System.IO.Compression.ZipFile]::OpenRead($env:DIT_ZIP);' +
+      'try{$z.Entries|ForEach-Object{$_.FullName}}finally{$z.Dispose()}',
+    { env: { DIT_ZIP: zipPath }, timeout: 60000 }
+  );
+
+  const base = path.resolve(target);
+  const bad = [];
+  for (const raw of out.split(/\r?\n/)) {
+    const name = raw.trim();
+    if (!name) continue;
+    if (path.isAbsolute(name) || /^[a-z]:/i.test(name) || name.startsWith('\\\\')) {
+      bad.push(name);
+      continue;
+    }
+    const dest = path.resolve(base, name.replace(/\//g, '\\'));
+    if (dest !== base && !dest.startsWith(base + path.sep)) bad.push(name);
+  }
+
+  if (bad.length) {
+    throw new Error(
+      `Archivio ZIP non sicuro: ${bad.length} voce/i puntano fuori dalla cartella di estrazione ` +
+        `(es. "${bad[0]}"). Estrazione annullata.`
+    );
+  }
+}
+
 async function extractZip(zipPath) {
   const target = path.join(config.STAGING_DIR, config.EXTRACT_SUBDIR);
+  await assertZipEntriesSafe(zipPath, target);
   await fs.promises.rm(target, { recursive: true, force: true });
   await fs.promises.mkdir(target, { recursive: true });
   await ps(
-    `Expand-Archive -Path ${JSON.stringify(zipPath)} -DestinationPath ${JSON.stringify(target)} -Force`
+    'Expand-Archive -LiteralPath $env:DIT_ZIP -DestinationPath $env:DIT_DEST -Force -ErrorAction Stop',
+    { env: { DIT_ZIP: zipPath, DIT_DEST: target } }
   );
   return findBucketDir(target);
 }
@@ -115,4 +166,4 @@ async function prepareSource(drive) {
   };
 }
 
-module.exports = { prepareSource, dismountIso };
+module.exports = { prepareSource, dismountIso, assertZipEntriesSafe };

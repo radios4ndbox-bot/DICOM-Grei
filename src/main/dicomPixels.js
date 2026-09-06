@@ -13,6 +13,12 @@ function firstFloat(s) {
   return parseFloat(String(s).split('\\')[0]);
 }
 
+// Limiti difensivi: i file arrivano da un supporto non fidato e Rows/Columns
+// sono uint16, quindi un file malformato può dichiarare 65535×65535 (~4 GB) e
+// far esplodere il processo main. L'anteprima non ha bisogno di tanto.
+const MAX_FILE_BYTES = 512 * 1024 * 1024; // 512 MB
+const MAX_PIXELS = 64 * 1024 * 1024; // 64 Mpx
+
 /**
  * Decodifica un singolo frame monocromatico non compresso in scala di grigi 8-bit,
  * applicando modality LUT (slope/intercept) e finestra (WindowCenter/WindowWidth).
@@ -23,6 +29,9 @@ function firstFloat(s) {
 function decode(file) {
   let buf;
   try {
+    const st = fs.statSync(file);
+    if (!st.isFile()) return { unsupported: 'read-error', message: 'non è un file' };
+    if (st.size > MAX_FILE_BYTES) return { unsupported: 'too-large' };
     buf = fs.readFileSync(file);
   } catch (e) {
     return { unsupported: 'read-error', message: String(e.message || e) };
@@ -50,12 +59,20 @@ function decode(file) {
   const slope = firstFloat(ds.string('x00281053')) || 1;
   const intercept = firstFloat(ds.string('x00281052')) || 0;
 
+  if (rows * cols > MAX_PIXELS) return { unsupported: 'too-large', rows, cols };
+
   const base = buf.byteOffset + pixEl.dataOffset;
+
+  // pixEl.length è la lunghezza DICHIARATA dall'elemento: su un file troncato o
+  // malformato può superare i byte realmente letti. Va confrontata anche con la
+  // fine del buffer, altrimenti le viste tipizzate qui sotto sforano.
+  const avail = Math.min(pixEl.length >>> 0, buf.length - pixEl.dataOffset);
+  const fits = (need) => pixEl.dataOffset >= 0 && need <= avail;
 
   // ---- RGB non compresso: passthrough
   if (spp === 3 && photometric.startsWith('RGB')) {
     const need = rows * cols * 3;
-    if (pixEl.length < need) return { unsupported: 'truncated' };
+    if (!fits(need)) return { unsupported: 'truncated' };
     return { rows, cols, rgb: Buffer.from(buf.buffer, base, need), photometric };
   }
   if (spp !== 1) return { unsupported: 'unsupported-samples', spp, photometric };
@@ -64,11 +81,11 @@ function decode(file) {
   const nPix = rows * cols;
   let read;
   if (bitsAllocated <= 8) {
-    if (pixEl.length < nPix) return { unsupported: 'truncated' };
+    if (!fits(nPix)) return { unsupported: 'truncated' };
     const u8 = new Uint8Array(buf.buffer, base, nPix);
     read = (i) => u8[i];
   } else {
-    if (pixEl.length < nPix * 2) return { unsupported: 'truncated' };
+    if (!fits(nPix * 2)) return { unsupported: 'truncated' };
     const dv = new DataView(buf.buffer, base, nPix * 2);
     read = signed ? (i) => dv.getInt16(i * 2, true) : (i) => dv.getUint16(i * 2, true);
   }
