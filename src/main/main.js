@@ -30,8 +30,8 @@ function fileUrl(relFromMain) {
 
 function createSplash() {
   const opts = {
-    width: 520,
-    height: 560,
+    width: 440,
+    height: 320,
     frame: false,
     transparent: true,
     resizable: false,

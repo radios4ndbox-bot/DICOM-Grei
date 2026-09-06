@@ -33,7 +33,8 @@
     color: #a9bcc2;
   }
 
-  .stage { width: min(74vw, 520px); aspect-ratio: 1 / 1; }
+  /* stage sized to the artwork band only (no empty square around it) */
+  .stage { width: min(86vw, 380px); aspect-ratio: 348 / 98; }
   .logo  { width: 100%; height: 100%; display: block; }
 
   /* ---------------------------------------------------------------
@@ -41,11 +42,10 @@
      --------------------------------------------------------------- */
   .import-btn {
     position: relative;
-    left: -14px; /* leggermente spostato a sinistra */
+    left: 0; /* centrato sotto il titolo (ora ricentrato) */
     width: 180px;
     height: 60px;
-    /* risale sotto la scritta, che occupa solo la fascia centrale dell'SVG */
-    margin-top: calc(min(74vw, 520px) * -0.32);
+    margin-top: 24px;
     cursor: pointer;
     background: transparent;
     border: 1px solid #a9d7de;
@@ -140,7 +140,9 @@
 </head>
 <body>
   <div class="stage">
-    <svg class="logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <!-- viewBox cropped to the artwork band and centred on the TITLE
+         (globe + wordmark, centre x=230); subtitle rides along below -->
+    <svg class="logo" viewBox="56 196 348 98" xmlns="http://www.w3.org/2000/svg">
       <!-- ===== globe (the "O") ===== -->
       <g class="globe">
         <path class="seg" d="m 250.55318,220.62683 c 7.33151,0 14.66302,0 22.2167,0 1.72254,3.37736 0.80794,11.29619 0.12074,14.91456 -0.0398,0.0781 -0.0797,0.15625 -0.12074,0.23674 -7.33151,0 -14.66302,0 -22.2167,0 -1.72254,-3.37736 -0.80794,-11.29619 -0.12074,-14.91456 0.0398,-0.0781 0.0797,-0.15625 0.12074,-0.23674 z" fill="#00c6bd" style="stroke-width:0.11955" />
