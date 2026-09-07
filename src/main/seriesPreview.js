@@ -11,6 +11,7 @@ const { decode } = require('./dicomPixels');
 const MAX_SERIES = 16; // quadranti mostrati
 const MAX_SCAN = 4000; // file di cui si legge l'intestazione
 const HEADER_BYTES = 128 * 1024; // lettura parziale: i tag di serie stanno all'inizio
+const HEADER_MAX = 4 * 1024 * 1024; // secondo tentativo per intestazioni voluminose
 const THUMB_MAX = 256; // lato massimo della miniatura
 
 function walk(dir, cap) {
@@ -36,21 +37,16 @@ function walk(dir, cap) {
   return out;
 }
 
-/**
- * Legge solo l'intestazione: si fermano il parsing ai pixel e si caricano al
- * massimo i primi KB del file. Su un supporto da migliaia di immagini leggere
- * tutto per intero costerebbe minuti.
- */
-function readHeader(file) {
+// Un tentativo di lettura parziale + parsing fermato prima dei pixel.
+function tryHeader(file, want) {
   let fd;
   try {
-    const size = fs.statSync(file).size;
-    if (size < 132) return null;
-    const len = Math.min(size, HEADER_BYTES);
-    const buf = Buffer.allocUnsafe(len);
+    const buf = Buffer.allocUnsafe(want);
     fd = fs.openSync(file, 'r');
-    fs.readSync(fd, buf, 0, len, 0);
-    return dicomParser.parseDicom(buf, { untilTag: 'x7fe00010' });
+    const read = fs.readSync(fd, buf, 0, want, 0);
+    // SOLO i byte davvero letti: allocUnsafe non azzera, e la coda conterrebbe
+    // memoria riusata che il parser interpreterebbe come contenuto del file.
+    return dicomParser.parseDicom(buf.subarray(0, read), { untilTag: 'x7fe00010' });
   } catch {
     return null;
   } finally {
@@ -60,6 +56,34 @@ function readHeader(file) {
       } catch {}
     }
   }
+}
+
+/**
+ * Legge solo l'intestazione: il parsing si ferma ai pixel e si caricano i primi
+ * KB del file. Su un supporto da migliaia di immagini leggere tutto per intero
+ * costerebbe minuti.
+ *
+ * Se 128 KB non bastano (blocchi privati voluminosi, icona incorporata) si
+ * riprova più in grande: altrimenti quella serie sparirebbe dall'anteprima
+ * senza che l'operatore sappia perché.
+ */
+function readHeader(file) {
+  let size;
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile() || st.size < 132) return null;
+    size = st.size;
+  } catch {
+    return null;
+  }
+
+  const first = Math.min(size, HEADER_BYTES);
+  const ds = tryHeader(file, first);
+  if (ds) return ds;
+
+  const second = Math.min(size, HEADER_MAX);
+  if (second <= first) return null; // il file era già stato letto per intero
+  return tryHeader(file, second);
 }
 
 function intOf(ds, tag) {
@@ -102,12 +126,20 @@ function buildSeriesPreview(dataRoot) {
   const scan = truncated ? files.slice(0, MAX_SCAN) : files;
 
   const byUid = new Map();
+  const noUid = new Map();
 
   for (const f of scan) {
     const ds = readHeader(f);
     if (!ds) continue;
 
-    const uid = ds.string('x0020000e') || `__no-uid__${path.dirname(f)}`;
+    // Se manca il SeriesInstanceUID si raggruppa per cartella, ma con una
+    // chiave anonima: il percorso assoluto non deve finire nel payload IPC.
+    let uid = ds.string('x0020000e');
+    if (!uid) {
+      const dir = path.dirname(f);
+      if (!noUid.has(dir)) noUid.set(dir, `__no-uid__${noUid.size}`);
+      uid = noUid.get(dir);
+    }
     const instance = intOf(ds, 'x00200013');
 
     let s = byUid.get(uid);
@@ -179,6 +211,7 @@ function buildSeriesPreview(dataRoot) {
   series.forEach((s, i) => {
     s.id = i;
     delete s.firstFile;
+    delete s.uid; // chiave interna di raggruppamento, non serve al renderer
   });
 
   return { series, files: sampleFiles, scanned: scan.length, truncated };

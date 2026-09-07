@@ -258,7 +258,9 @@ function reset() {
   current = { ...DEFAULTS };
   apply();
   try {
-    fs.writeFileSync(settingsPath(), JSON.stringify(current, null, 2), 'utf8');
+    const p = settingsPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(current, null, 2), 'utf8');
   } catch {}
   return { ok: true, errors: [], values: current };
 }

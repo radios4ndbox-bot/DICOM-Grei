@@ -32,7 +32,7 @@ let mainRevealed = false;
  * main non accetta più percorsi o piani costruiti dal renderer: li ricalcola
  * da qui e dal renderer prende solo scelte (quale unità, quale tipo forzato).
  */
-const session = { drives: [], prepared: null, plan: null, send: null };
+const session = { drives: [], prepared: null, plan: null, send: null, seriesFiles: [], busy: false };
 
 const TYPE_OVERRIDE = {
   A: { pattern: 'MP*', strategy: 'keep' },
@@ -136,6 +136,7 @@ ipcMain.handle('detect-media', async () => {
   session.drives = await detectMedia();
   session.prepared = null;
   session.plan = null;
+  session.seriesFiles = [];
   return session.drives;
 });
 
@@ -148,6 +149,7 @@ ipcMain.handle('prepare-source', async (_e, drive) => {
 
   session.prepared = await prepareSource(known);
   session.plan = null;
+  session.seriesFiles = [];
   return session.prepared;
 });
 
@@ -167,6 +169,7 @@ ipcMain.handle('classify', (_e) => {
 
 ipcMain.handle('run-import', async (_e, opts) => {
   if (!session.plan) throw new Error('Nessuna classificazione disponibile.');
+  if (session.busy) throw new Error('Importazione già in corso.');
 
   const emitProgress = (d) => mainWindow && mainWindow.webContents.send('progress', d);
   const emitLog = (line) => mainWindow && mainWindow.webContents.send('log', line);
@@ -185,37 +188,47 @@ ipcMain.handle('run-import', async (_e, opts) => {
   const turbo = !!(opts && opts.turbo);
   const workers = turbo ? config.WORKERS_TURBO : config.WORKERS_NORMAL;
 
-  const copy = await stageFiles(plan, emitProgress, workers);
-
-  if (copy.copied === 0) {
-    return { copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' };
-  }
-
-  const pending = sendStoreScu(
-    { pattern: plan.pattern, partDirs: copy.partDirs, totalFiles: copy.copied },
-    (ev) => {
-      if (ev.type === 'log') emitLog(ev.line);
-      else if (ev.type === 'progress') emitProgress(ev.data);
-    }
-  );
-  session.send = pending;
-
-  let send;
+  // `busy` copre TUTTA l'importazione, copia compresa. `session.send` da solo
+  // non basta: viene valorizzato solo dopo lo staging, e la copia di migliaia
+  // di file da un DVD dura minuti, durante i quali la pulizia giornaliera
+  // avrebbe potuto svuotare lo staging sotto i piedi della copia stessa.
+  session.busy = true;
   try {
-    send = await pending;
+    const copy = await stageFiles(plan, emitProgress, workers);
+
+    if (copy.copied === 0) {
+      return { copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' };
+    }
+
+    const pending = sendStoreScu(
+      { pattern: plan.pattern, partDirs: copy.partDirs, totalFiles: copy.copied },
+      (ev) => {
+        if (ev.type === 'log') emitLog(ev.line);
+        else if (ev.type === 'progress') emitProgress(ev.data);
+      }
+    );
+    session.send = pending;
+
+    let send;
+    try {
+      send = await pending;
+    } finally {
+      session.send = null;
+    }
+
+    // Invio interrotto (operatore o RIS): lo staging resta a metà, va azzerato.
+    // L'ISO resta montata di proposito, così si può ripartire senza rileggere il
+    // supporto; viene smontata dalla pulizia finale.
+    if (send.cancelled) {
+      const reset = await cleanup({});
+      return { copy, send, iso, interrupted: true, reset };
+    }
+
+    return { copy, send, iso, workers, turbo };
   } finally {
+    session.busy = false;
     session.send = null;
   }
-
-  // Invio interrotto (operatore o RIS): lo staging resta a metà, va azzerato.
-  // L'ISO resta montata di proposito, così si può ripartire senza rileggere il
-  // supporto; viene smontata dalla pulizia finale.
-  if (send.cancelled) {
-    const reset = await cleanup({});
-    return { copy, send, iso, interrupted: true, reset };
-  }
-
-  return { copy, send, iso, workers, turbo };
 });
 
 // Interruzione dell'invio in corso. Il chiamante riceve comunque il risultato
@@ -226,8 +239,6 @@ ipcMain.handle('stop-import', () => {
   return { stopped: true };
 });
 
-ipcMain.handle('daily-purge', () => dailyPurge(false));
-
 // ---- impostazioni
 
 ipcMain.handle('get-settings', () => settings.describe());
@@ -235,8 +246,8 @@ ipcMain.handle('get-settings', () => settings.describe());
 ipcMain.handle('save-settings', (_e, values) => {
   // Cambiare parametri mentre storescu sta girando darebbe uno stato incoerente
   // fra quello che si vede e quello che l'invio in corso sta usando.
-  if (session.send) {
-    return { ok: false, errors: ['Trasferimento in corso: attendere la fine o interrompere.'] };
+  if (session.busy) {
+    return { ok: false, errors: ['Importazione in corso: attendere la fine o interrompere.'] };
   }
   const r = settings.save(values);
   if (r.ok) refreshPacsBadge();
@@ -244,8 +255,8 @@ ipcMain.handle('save-settings', (_e, values) => {
 });
 
 ipcMain.handle('reset-settings', () => {
-  if (session.send) {
-    return { ok: false, errors: ['Trasferimento in corso: attendere la fine o interrompere.'] };
+  if (session.busy) {
+    return { ok: false, errors: ['Importazione in corso: attendere la fine o interrompere.'] };
   }
   const r = settings.reset();
   refreshPacsBadge();
@@ -286,6 +297,8 @@ ipcMain.handle('preview-series', (_e, id) => {
 });
 
 ipcMain.handle('cleanup', async () => {
+  // rm ricorsivo sullo staging: non deve poter partire mentre lo si sta usando
+  if (session.busy) throw new Error('Importazione in corso: interromperla prima di pulire.');
   const emitProgress = (d) => mainWindow && mainWindow.webContents.send('progress', d);
   // L'ISO da smontare è quella montata da noi in questa sessione, non una
   // qualsiasi indicata dal renderer.
@@ -330,7 +343,7 @@ app.whenReady().then(() => {
   // Conservazione giornaliera: all'avvio e poi a ogni cambio di data, le copie
   // della giornata precedente vengono eliminate. Mai durante un invio.
   const purgeIfIdle = () => {
-    if (session.send) return;
+    if (session.busy) return;
     dailyPurge(false).catch(() => {});
   };
   purgeIfIdle();

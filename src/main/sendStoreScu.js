@@ -39,7 +39,23 @@ function stagedFiles(dir, pattern) {
   return names.filter((e) => e.isFile() && match(e.name)).map((e) => path.join(dir, e.name));
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * Attesa interrompibile. Con un semplice setTimeout, premere "Interrompi"
+ * durante il backoff fra due ritentativi non avrebbe effetto fino a 60 s dopo.
+ */
+function sleep(ms, isCancelled) {
+  return new Promise((resolve) => {
+    const step = 250;
+    let waited = 0;
+    const t = setInterval(() => {
+      waited += step;
+      if (waited >= ms || (isCancelled && isCancelled())) {
+        clearInterval(t);
+        resolve();
+      }
+    }, step);
+  });
+}
 
 // Invio di un'intera cartella di staging (un worker = un'associazione DICOM).
 function dirArgs(dir, pattern) {
@@ -297,10 +313,30 @@ function sendStoreScu(opts, emit) {
       if (!insideStaging(d)) throw new Error(`Cartella fuori dallo staging: ${d}`);
     }
 
+    // Il totale della barra deve essere quello che storescu invierà davvero,
+    // non quanti file sono stati copiati: con il Tipo A si copia tutto il
+    // contenuto del supporto ma si invia solo ciò che combacia con "MP*",
+    // quindi il totale da copiare sarebbe irraggiungibile e l'ETA mai risolta.
+    let inviabili = 0;
+    for (const d of partDirs) inviabili += stagedFiles(d, pattern).length;
+    if (inviabili === 0) {
+      // meglio dirlo subito che lasciar girare storescu a vuoto e chiudere con
+      // "0 inviati" senza spiegazione
+      throw new Error(
+        `Nessun file in staging corrisponde a "${pattern}": ` +
+          'il tipo di supporto rilevato non combacia con il contenuto. ' +
+          'Forzare un tipo diverso dalla tendina e riprovare.'
+      );
+    }
+    state.total = inviabili;
+
     emit({
       type: 'log',
-      line: `> ${partDirs.length} associazione/i in parallelo verso ${config.PACS_IP}:${config.PACS_PORT}`,
+      line:
+        `> ${partDirs.length} associazione/i in parallelo verso ${config.PACS_IP}:${config.PACS_PORT}` +
+        ` · ${state.total} file da inviare`,
     });
+    emitProgress();
 
     // ---- passaggio principale: un worker per sottocartella
     const results = await Promise.all(
@@ -359,7 +395,7 @@ function sendStoreScu(opts, emit) {
         type: 'log',
         line: `> ritentativo ${attempt}/${retries} su ${files.length} file, fra ${Math.round(wait / 1000)} s`,
       });
-      await sleep(wait);
+      await sleep(wait, () => cancelled);
       if (cancelled) break;
 
       emitProgress();
@@ -372,6 +408,7 @@ function sendStoreScu(opts, emit) {
       collectUnattempted();
     }
 
+    stalled = false;
     state.cancelled = cancelled;
     state.failedFiles = [...retryQueue.values(), ...permanent.values()];
     state.permanentFailures = [...permanent.values()];

@@ -11,13 +11,6 @@ function el(tag, className, text) {
   return n;
 }
 
-const TYPE_MAP = {
-  A: { pattern: 'MP*', strategy: 'keep' },
-  B: { pattern: '*.dcm', strategy: 'rename' },
-  C: { pattern: '*.dcm', strategy: 'suffix' },
-  D: { pattern: '*.dcm', strategy: 'rename' },
-};
-
 const DRIVE_LABEL = { 2: 'USB', 5: 'CD/DVD/ISO' };
 
 // step della barra: 0 = Copia, 1 = Invio a PACS, 2 = Pulizia
@@ -28,7 +21,6 @@ const state = {
   drive: null,
   prepared: null,
   plan: null,
-  effective: null,
   finished: false,
 };
 
@@ -237,7 +229,7 @@ $('btn-detect').addEventListener('click', detect);
 
 async function detect() {
   $('detect-status').textContent = 'Scansione in corso…';
-  $('drive-list').innerHTML = '';
+  $('drive-list').textContent = '';
   $('btn-to-study').disabled = true;
   state.drive = null;
   try {
@@ -529,19 +521,9 @@ async function loadSeries() {
 $('btn-back-media').addEventListener('click', () => showStep('media'));
 $('btn-start').addEventListener('click', startImport);
 
-// Solo per l'anteprima a schermo: il piano che conta lo ricostruisce il main.
-function buildEffectivePlan() {
-  const p = state.plan;
-  const forced = $('override').value;
-  if (!forced || forced === p.type) return { ...p };
-  const m = TYPE_MAP[forced];
-  return { ...p, type: forced, pattern: m.pattern, strategy: m.strategy };
-}
-
 // ---------------------------------------------------------------- STEP 3 — barra unica
 
 async function startImport() {
-  state.effective = buildEffectivePlan();
   state.finished = false;
 
   $('log').textContent = '';
@@ -697,9 +679,9 @@ $('btn-cleanup').addEventListener('click', async () => {
 });
 
 $('btn-restart').addEventListener('click', () => {
-  state.drive = state.prepared = state.plan = state.effective = null;
+  state.drive = state.prepared = state.plan = null;
   state.finished = false;
-  $('drive-list').innerHTML = '';
+  $('drive-list').textContent = '';
   $('detect-status').textContent = '';
   $('cleanup-status').textContent = '';
   $('phase-eta').textContent = '';
