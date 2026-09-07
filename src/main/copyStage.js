@@ -63,14 +63,14 @@ function copyFileWithTimeout(src, dest, timeoutMs) {
   });
 }
 
-function uniqueDest(baseName) {
-  let candidate = path.join(config.STAGING_DIR, baseName);
+function uniqueDest(dir, baseName) {
+  let candidate = path.join(dir, baseName);
   if (!fs.existsSync(candidate)) return candidate;
   const ext = path.extname(baseName);
   const stem = path.basename(baseName, ext);
   let i = 1;
   do {
-    candidate = path.join(config.STAGING_DIR, `${stem}_${i}${ext}`);
+    candidate = path.join(dir, `${stem}_${i}${ext}`);
     i++;
   } while (fs.existsSync(candidate));
   return candidate;
@@ -88,11 +88,19 @@ function destName(srcFile, strategy, suffixIndex) {
 /**
  * Copia i file dalla sorgente classificata in C:\tmp\dicom_import.
  *
+ * Con `parts > 1` i file vengono distribuiti a rotazione in sottocartelle
+ * `part_00`, `part_01`, … : ognuna sarà inviata da un processo storescu
+ * separato, cioè su un'associazione DICOM indipendente. È questo che moltiplica
+ * il throughput — il singolo invio è limitato dal round-trip del C-STORE, non
+ * dalla CPU. Le collisioni di nome fra part diverse sono irrilevanti: il PACS
+ * distingue le istanze dal SOP Instance UID, non dal nome file.
+ *
  * @param {object} plan  risultato di classify()
  * @param {(p:object)=>void} onProgress  riceve { phase:'copy', copied, total, skipped, current }
- * @returns {Promise<{ copied:number, skipped:number, total:number, skippedFiles:string[] }>}
+ * @param {number} parts  numero di sottocartelle (worker) da preparare
+ * @returns {Promise<{ copied, skipped, total, skippedFiles, partDirs }>}
  */
-async function stageFiles(plan, onProgress) {
+async function stageFiles(plan, onProgress, parts = 1) {
   await emptyStagingDir();
 
   let jobs = [];
@@ -107,13 +115,27 @@ async function stageFiles(plan, onProgress) {
   }
 
   const total = jobs.length;
+  const nParts = Math.max(1, Math.min(parts | 0 || 1, total || 1));
+
+  const partDirs = [];
+  for (let i = 0; i < nParts; i++) {
+    const d =
+      nParts === 1
+        ? config.STAGING_DIR
+        : path.join(config.STAGING_DIR, config.PART_PREFIX + String(i).padStart(2, '0'));
+    if (nParts > 1) await fs.promises.mkdir(d, { recursive: true });
+    partDirs.push(d);
+  }
+
   let copied = 0;
   let skipped = 0;
   const skippedFiles = [];
 
-  for (const job of jobs) {
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i];
+    const dir = partDirs[i % nParts];
     const name = destName(job.src, plan.strategy, job.suffixIndex);
-    const dest = uniqueDest(name);
+    const dest = uniqueDest(dir, name);
     try {
       await copyFileWithTimeout(job.src, dest, config.FILE_COPY_TIMEOUT_MS);
       copied++;
@@ -129,7 +151,16 @@ async function stageFiles(plan, onProgress) {
     }
   }
 
-  return { copied, skipped, total, skippedFiles };
+  // le part rimaste vuote (meno file che worker) non vanno passate a storescu
+  const usedDirs = partDirs.filter((d) => {
+    try {
+      return fs.readdirSync(d).length > 0;
+    } catch {
+      return false;
+    }
+  });
+
+  return { copied, skipped, total, skippedFiles, partDirs: usedDirs };
 }
 
 module.exports = { stageFiles, emptyStagingDir };

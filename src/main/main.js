@@ -10,11 +10,13 @@ const { prepareSource } = require('./isoZip');
 const { classify } = require('./classify');
 const { readStudyInfo } = require('./dicomInfo');
 const { decode: decodePixels } = require('./dicomPixels');
+const { buildSeriesPreview } = require('./seriesPreview');
 const { stageFiles } = require('./copyStage');
 const { sendStoreScu } = require('./sendStoreScu');
-const { cleanup } = require('./cleanup');
+const { cleanup, dailyPurge } = require('./cleanup');
 
 const config = require('./config');
+const settings = require('./settings');
 
 const APP_ICON = path.join(__dirname, '..', '..', 'build', 'icon.ico');
 
@@ -30,7 +32,7 @@ let mainRevealed = false;
  * main non accetta più percorsi o piani costruiti dal renderer: li ricalcola
  * da qui e dal renderer prende solo scelte (quale unità, quale tipo forzato).
  */
-const session = { drives: [], prepared: null, plan: null };
+const session = { drives: [], prepared: null, plan: null, send: null };
 
 const TYPE_OVERRIDE = {
   A: { pattern: 'MP*', strategy: 'keep' },
@@ -38,13 +40,6 @@ const TYPE_OVERRIDE = {
   C: { pattern: '*.dcm', strategy: 'suffix' },
   D: { pattern: '*.dcm', strategy: 'rename' },
 };
-
-// true se `child` è dentro `parent` (o coincide), a prova di ".." e symlink-ish.
-function isInside(parent, child) {
-  const p = path.resolve(parent);
-  const c = path.resolve(child);
-  return c === p || c.startsWith(p.endsWith(path.sep) ? p : p + path.sep);
-}
 
 function fileUrl(relFromMain) {
   return url.format({
@@ -185,32 +180,106 @@ ipcMain.handle('run-import', async (_e, opts) => {
 
   const iso = (session.prepared && session.prepared.iso) || null;
 
-  const copy = await stageFiles(plan, emitProgress);
+  // Turbo = più associazioni DICOM in parallelo. Di default se ne usano poche
+  // per non caricare né il PC dell'operatore né il PACS.
+  const turbo = !!(opts && opts.turbo);
+  const workers = turbo ? config.WORKERS_TURBO : config.WORKERS_NORMAL;
+
+  const copy = await stageFiles(plan, emitProgress, workers);
 
   if (copy.copied === 0) {
     return { copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' };
   }
 
-  const send = await sendStoreScu(plan.pattern, copy.copied, (ev) => {
-    if (ev.type === 'log') emitLog(ev.line);
-    else if (ev.type === 'progress') emitProgress(ev.data);
-  });
+  const pending = sendStoreScu(
+    { pattern: plan.pattern, partDirs: copy.partDirs, totalFiles: copy.copied },
+    (ev) => {
+      if (ev.type === 'log') emitLog(ev.line);
+      else if (ev.type === 'progress') emitProgress(ev.data);
+    }
+  );
+  session.send = pending;
 
-  return { copy, send, iso };
+  let send;
+  try {
+    send = await pending;
+  } finally {
+    session.send = null;
+  }
+
+  // Invio interrotto (operatore o RIS): lo staging resta a metà, va azzerato.
+  // L'ISO resta montata di proposito, così si può ripartire senza rileggere il
+  // supporto; viene smontata dalla pulizia finale.
+  if (send.cancelled) {
+    const reset = await cleanup({});
+    return { copy, send, iso, interrupted: true, reset };
+  }
+
+  return { copy, send, iso, workers, turbo };
 });
 
-ipcMain.handle('preview-image', (_e, absPath) => {
-  if (!absPath || typeof absPath !== 'string') return { unsupported: 'no-path' };
+// Interruzione dell'invio in corso. Il chiamante riceve comunque il risultato
+// da 'run-import', con interrupted:true e lo staging già ripulito.
+ipcMain.handle('stop-import', () => {
+  if (!session.send) return { stopped: false };
+  session.send.cancel();
+  return { stopped: true };
+});
 
-  // L'anteprima può leggere solo dentro la sorgente preparata o lo staging:
-  // altrimenti sarebbe una primitiva di lettura file arbitraria.
-  const roots = [config.STAGING_DIR];
-  if (session.plan) roots.push(session.plan.dataRoot);
-  if (session.prepared) roots.push(session.prepared.sourcePath);
-  if (!roots.some((r) => isInside(r, absPath))) return { unsupported: 'no-path' };
+ipcMain.handle('daily-purge', () => dailyPurge(false));
 
-  const r = decodePixels(absPath);
-  // trasferisci i pixel come ArrayBuffer (niente copia JSON enorme)
+// ---- impostazioni
+
+ipcMain.handle('get-settings', () => settings.describe());
+
+ipcMain.handle('save-settings', (_e, values) => {
+  // Cambiare parametri mentre storescu sta girando darebbe uno stato incoerente
+  // fra quello che si vede e quello che l'invio in corso sta usando.
+  if (session.send) {
+    return { ok: false, errors: ['Trasferimento in corso: attendere la fine o interrompere.'] };
+  }
+  const r = settings.save(values);
+  if (r.ok) refreshPacsBadge();
+  return r;
+});
+
+ipcMain.handle('reset-settings', () => {
+  if (session.send) {
+    return { ok: false, errors: ['Trasferimento in corso: attendere la fine o interrompere.'] };
+  }
+  const r = settings.reset();
+  refreshPacsBadge();
+  return r;
+});
+
+function refreshPacsBadge() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('pacs-changed', {
+      aet: config.DEST_AET,
+      host: config.PACS_IP,
+      port: config.PACS_PORT,
+    });
+  }
+}
+
+ipcMain.handle('series-preview', () => {
+  if (!session.plan) throw new Error('Nessuna classificazione disponibile.');
+  const r = buildSeriesPreview(session.plan.dataRoot);
+  session.seriesFiles = r.files;
+  for (const s of r.series) {
+    if (s.gray) s.gray = s.gray.buffer.slice(s.gray.byteOffset, s.gray.byteOffset + s.gray.byteLength);
+    if (s.rgb) s.rgb = s.rgb.buffer.slice(s.rgb.byteOffset, s.rgb.byteOffset + s.rgb.byteLength);
+  }
+  return { series: r.series, scanned: r.scanned, truncated: r.truncated };
+});
+
+// Immagine a grandezza piena di una serie, indicata per indice: i percorsi
+// restano nel main.
+ipcMain.handle('preview-series', (_e, id) => {
+  const files = session.seriesFiles || [];
+  const f = files[Number(id)];
+  if (!f) return { unsupported: 'no-path' };
+  const r = decodePixels(f);
   if (r.gray) r.gray = r.gray.buffer.slice(r.gray.byteOffset, r.gray.byteOffset + r.gray.byteLength);
   if (r.rgb) r.rgb = r.rgb.buffer.slice(r.rgb.byteOffset, r.rgb.byteOffset + r.rgb.byteLength);
   return r;
@@ -255,6 +324,18 @@ app.on('web-contents-created', (_e, contents) => {
 });
 
 app.whenReady().then(() => {
+  // prima di tutto: i valori salvati sovrascrivono i default di config
+  settings.load();
+
+  // Conservazione giornaliera: all'avvio e poi a ogni cambio di data, le copie
+  // della giornata precedente vengono eliminate. Mai durante un invio.
+  const purgeIfIdle = () => {
+    if (session.send) return;
+    dailyPurge(false).catch(() => {});
+  };
+  purgeIfIdle();
+  setInterval(purgeIfIdle, 10 * 60 * 1000).unref();
+
   createSplash();
   createMain();
 

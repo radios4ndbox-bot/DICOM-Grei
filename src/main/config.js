@@ -35,12 +35,50 @@ module.exports = {
   // storescu.exe: bundle in resources/dcmtk/bin oppure %USERPROFILE%\Desktop\dcmtk\bin
   STORESCU: resolveStorescu(),
 
-  // Area di staging locale: si copia sempre qui prima di inviare
+  // Area di staging locale: si copia sempre qui prima di inviare.
+  // Viene SVUOTATA all'inizio di ogni import.
   STAGING_DIR: 'C:\\tmp\\dicom_import',
 
-  // Sottocartella usata per l'estrazione degli ZIP
-  EXTRACT_SUBDIR: '_extracted',
+  // Estrazione degli ZIP. DEVE stare fuori da STAGING_DIR: stageFiles()
+  // svuota lo staging prima di copiare, e con l'estrazione dentro cancellava
+  // la sorgente da cui stava per leggere (import da ZIP sempre a 0 file).
+  EXTRACT_DIR: 'C:\\tmp\\dicom_import_src',
 
   // Timeout lettura per singolo file (DVD danneggiati)
   FILE_COPY_TIMEOUT_MS: 15000,
+
+  // ---- Trasferimento verso il PACS -------------------------------------
+  // Una singola associazione invia i file in sequenza e aspetta la risposta
+  // di ogni C-STORE: il collo di bottiglia è il round-trip, non la CPU.
+  // Più associazioni in parallelo moltiplicano il throughput.
+  WORKERS_NORMAL: 2,
+  WORKERS_TURBO: 6,
+
+  // Ritentativi sui soli file falliti/non tentati, dopo il primo passaggio
+  SEND_RETRIES: 3,
+
+  // Timeout di rete per storescu, in secondi. DCMTK di default li lascia
+  // ILLIMITATI: se il PACS smette di rispondere (p.es. il RIS apre l'esame in
+  // refertazione e lo blocca) storescu resta appeso per sempre e il
+  // trasferimento non riparte più. Con un timeout muore, e i file non inviati
+  // vengono ripresi dal ciclo di ritentativi.
+  DIMSE_TIMEOUT_S: 60,
+  ACSE_TIMEOUT_S: 30,
+  CONNECT_TIMEOUT_S: 30,
+
+  // Attesa crescente fra un ritentativo e il successivo: se il PACS è occupato
+  // serve dargli tempo, non martellarlo.
+  RETRY_BACKOFF_MS: [10000, 30000, 60000],
+
+  // Nessuna risposta dal PACS per questo tempo => avviso all'operatore
+  STALL_WARN_MS: 45000,
+
+  // Prefisso delle sottocartelle di staging usate dai worker paralleli
+  PART_PREFIX: 'part_',
+
+  // ---- Conservazione giornaliera ---------------------------------------
+  // Le copie in staging restano disponibili per la giornata e vengono
+  // eliminate al cambio di data (vedi dailyPurge).
+  // fuori dallo staging, altrimenti verrebbe cancellato a ogni import
+  DAILY_STAMP: 'C:\\tmp\\dicom_import.day',
 };

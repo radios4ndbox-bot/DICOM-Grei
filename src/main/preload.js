@@ -14,10 +14,17 @@ contextBridge.exposeInMainWorld('api', {
   // Il main tiene lo stato autorevole (sorgente preparata, piano di
   // classificazione). Qui passano solo scelte dell'utente, mai percorsi.
   classify: () => ipcRenderer.invoke('classify'),
-  previewImage: (absPath) => ipcRenderer.invoke('preview-image', absPath),
-  runImport: (type) => ipcRenderer.invoke('run-import', { type: type || '' }),
+  seriesPreview: () => ipcRenderer.invoke('series-preview'),
+  previewSeries: (id) => ipcRenderer.invoke('preview-series', id),
+  runImport: (type, turbo) => ipcRenderer.invoke('run-import', { type: type || '', turbo: !!turbo }),
+  stopImport: () => ipcRenderer.invoke('stop-import'),
   cleanup: () => ipcRenderer.invoke('cleanup'),
+
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (values) => ipcRenderer.invoke('save-settings', values),
+  resetSettings: () => ipcRenderer.invoke('reset-settings'),
 
   onProgress: (cb) => subscribe('progress', cb),
   onLog: (cb) => subscribe('log', cb),
+  onPacsChanged: (cb) => subscribe('pacs-changed', cb),
 });

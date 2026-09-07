@@ -63,6 +63,10 @@ body {
 main { padding: 0; }
 .step { max-width: 720px; }
 
+/* [hidden] deve vincere su qualsiasi display: dichiarato qui sotto,
+   altrimenti nascondere un elemento da JS non ha effetto */
+[hidden] { display: none !important; }
+
 /* ---- preview / reader interno --------------------------------------- */
 .viewer {
   position: sticky;
@@ -275,3 +279,186 @@ select {
   word-break: break-all;
 }
 code { background: #eef4f6; padding: 1px 5px; border-radius: 4px; font-family: "Consolas", monospace; }
+
+/* ---- stima tempo residuo --------------------------------------------- */
+.eta {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--teal-d);
+  min-height: 18px;
+}
+
+/* ---- opzione turbo ---------------------------------------------------- */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.check input { accent-color: var(--teal); width: 15px; height: 15px; cursor: pointer; }
+#turbo-note { font-size: 12px; }
+
+/* ---- popup di conferma (stile splash, comparsa a dissolvenza) --------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 40, 45, 0.28);
+  z-index: 50;
+  opacity: 0;
+  transition: opacity 320ms ease;
+}
+.modal.show { opacity: 1; }
+
+.modal__card {
+  width: min(88vw, 380px);
+  padding: 30px 28px 24px;
+  border-radius: 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 46px rgba(0, 60, 70, 0.22);
+  text-align: center;
+  transform: translateY(10px) scale(0.98);
+  transition: transform 320ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.modal.show .modal__card { transform: none; }
+
+.modal__globe { display: block; margin: 0 auto 14px; }
+.modal__title { margin: 0 0 8px; font-size: 19px; font-weight: 600; color: var(--ink); }
+.modal__text { margin: 0 0 20px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.modal__card button { min-width: 130px; }
+
+/* ---- griglia serie: un quadrante per serie ---------------------------- */
+.series {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+  align-content: start;
+  flex: 1;
+  min-height: 0;
+  max-height: 470px;
+}
+
+.series__cell {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0b1418;
+  display: flex;
+  flex-direction: column;
+}
+.series__thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  display: block;
+  background: #0b1418;
+}
+.series__none {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #8fa6ad;
+}
+.series__cap {
+  padding: 5px 7px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.series__cap b { display: block; color: var(--ink); font-weight: 600; }
+.series__cap span { color: var(--muted); }
+
+/* ---- ingranaggio impostazioni ---------------------------------------- */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-btn:hover { color: var(--teal-d); border-color: var(--teal); background: #f2fbfc; }
+.icon-btn svg { fill: currentColor; display: block; }
+
+/* ---- pannello impostazioni ------------------------------------------- */
+.modal__card--wide {
+  width: min(94vw, 560px);
+  text-align: left;
+  padding: 24px 26px 20px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal__card--wide .modal__title { text-align: left; margin-bottom: 14px; }
+
+.set__body { overflow-y: auto; flex: 1; min-height: 0; padding-right: 4px; }
+
+.set__section { margin-bottom: 18px; }
+.set__section h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--teal-d);
+}
+.set__note { margin: 0 0 10px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+
+.set__row {
+  display: grid;
+  grid-template-columns: 1fr 128px;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.set__row label { font-size: 13px; }
+.set__hint { grid-column: 1 / 2; font-size: 11px; color: var(--muted); line-height: 1.35; }
+.set__input { display: flex; align-items: center; gap: 5px; grid-row: 1 / 2; grid-column: 2 / 3; }
+.set__input input {
+  /* flex:1 e non width:100%: con un fratello (l'unità) il 100% la spinge fuori */
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font: 13px/1.2 "Consolas", monospace;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+.set__input input:focus { outline: 2px solid var(--teal); outline-offset: -1px; }
+.set__input input.bad { border-color: var(--err); background: #fff5f4; }
+.set__unit { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+
+.set__errors {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff5f4;
+  border: 1px solid var(--err);
+  color: var(--err);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+.set__file { margin: 10px 0 0; font-size: 11px; word-break: break-all; }
+.set__actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+.set__spacer { flex: 1; }

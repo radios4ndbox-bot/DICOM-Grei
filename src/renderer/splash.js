@@ -4,8 +4,8 @@
 // restrittiva di index.html: script-src 'self', niente 'unsafe-inline'.
 (function () {
   var btn = document.getElementById('import-btn');
-  // l'animazione del logo termina a ~6.1s: il pulsante compare subito dopo
-  setTimeout(function () { btn.classList.add('show'); }, 6300);
+  // l'animazione del logo termina a ~2.5s: il pulsante compare subito dopo
+  setTimeout(function () { btn.classList.add('show'); }, 2600);
   btn.addEventListener('click', function () {
     btn.disabled = true;
     btn.querySelector('span').textContent = 'Avvio…';

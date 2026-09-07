@@ -128,7 +128,8 @@ async function assertZipEntriesSafe(zipPath, target) {
 }
 
 async function extractZip(zipPath) {
-  const target = path.join(config.STAGING_DIR, config.EXTRACT_SUBDIR);
+  // Fuori da STAGING_DIR: lo staging viene svuotato a ogni import.
+  const target = config.EXTRACT_DIR;
   await assertZipEntriesSafe(zipPath, target);
   await fs.promises.rm(target, { recursive: true, force: true });
   await fs.promises.mkdir(target, { recursive: true });
