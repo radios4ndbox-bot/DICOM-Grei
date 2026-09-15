@@ -9,8 +9,6 @@ const { detectMedia } = require('./detectMedia');
 const { prepareSource } = require('./isoZip');
 const { classify } = require('./classify');
 const { readStudyInfo } = require('./dicomInfo');
-const { decode: decodePixels } = require('./dicomPixels');
-const { buildSeriesPreview } = require('./seriesPreview');
 const { stageFiles } = require('./copyStage');
 const { sendStoreScu } = require('./sendStoreScu');
 const { cleanup, dailyPurge } = require('./cleanup');
@@ -32,7 +30,7 @@ let mainRevealed = false;
  * main non accetta più percorsi o piani costruiti dal renderer: li ricalcola
  * da qui e dal renderer prende solo scelte (quale unità, quale tipo forzato).
  */
-const session = { drives: [], prepared: null, plan: null, send: null, seriesFiles: [], busy: false };
+const session = { drives: [], prepared: null, plan: null, send: null, busy: false, cancelRequested: false };
 
 const TYPE_OVERRIDE = {
   A: { pattern: 'MP*', strategy: 'keep' },
@@ -136,7 +134,6 @@ ipcMain.handle('detect-media', async () => {
   session.drives = await detectMedia();
   session.prepared = null;
   session.plan = null;
-  session.seriesFiles = [];
   return session.drives;
 });
 
@@ -149,7 +146,6 @@ ipcMain.handle('prepare-source', async (_e, drive) => {
 
   session.prepared = await prepareSource(known);
   session.plan = null;
-  session.seriesFiles = [];
   return session.prepared;
 });
 
@@ -167,12 +163,72 @@ ipcMain.handle('classify', (_e) => {
   return { ...plan, study };
 });
 
+/**
+ * Canale verso la finestra durante l'importazione.
+ *
+ * Prima ogni riga di log di storescu e ogni file copiato/inviato era un
+ * messaggio IPC a sé: con -v sono ~5 righe per file, decine di migliaia di
+ * messaggi per un esame grande, e il renderer restava indietro di minuti
+ * rispetto al trasferimento reale. Qui l'avanzamento viene fuso (al massimo un
+ * aggiornamento ogni 150 ms, l'ultimo stato arriva sempre) e il log viaggia a
+ * blocchi ogni 250 ms.
+ */
+function uiChannel() {
+  const PROGRESS_MS = 150;
+  const LOG_MS = 250;
+  const LOG_KEEP = 2000; // la finestra ne mostra comunque solo le ultime 400
+
+  let progress = null;
+  let progressTimer = null;
+  let lines = [];
+  let logTimer = null;
+
+  const send = (channel, data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, data);
+  };
+  const flushProgress = () => {
+    clearTimeout(progressTimer);
+    progressTimer = null;
+    if (progress) {
+      send('progress', progress);
+      progress = null;
+    }
+  };
+  const flushLog = () => {
+    clearTimeout(logTimer);
+    logTimer = null;
+    if (lines.length) {
+      send('log', lines);
+      lines = [];
+    }
+  };
+
+  return {
+    progress(d) {
+      // un cambio di fase non deve perdere l'ultimo stato della fase precedente
+      if (progress && progress.phase !== d.phase) flushProgress();
+      progress = d;
+      if (!progressTimer) progressTimer = setTimeout(flushProgress, PROGRESS_MS);
+    },
+    log(line) {
+      lines.push(line);
+      if (lines.length > LOG_KEEP) lines.splice(0, lines.length - LOG_KEEP);
+      if (!logTimer) logTimer = setTimeout(flushLog, LOG_MS);
+    },
+    flush() {
+      flushProgress();
+      flushLog();
+    },
+  };
+}
+
 ipcMain.handle('run-import', async (_e, opts) => {
   if (!session.plan) throw new Error('Nessuna classificazione disponibile.');
   if (session.busy) throw new Error('Importazione già in corso.');
 
-  const emitProgress = (d) => mainWindow && mainWindow.webContents.send('progress', d);
-  const emitLog = (line) => mainWindow && mainWindow.webContents.send('log', line);
+  const ch = uiChannel();
+  const emitProgress = ch.progress;
+  const emitLog = ch.log;
 
   // Dal renderer prendiamo SOLO l'eventuale tipo forzato dalla tendina.
   // dataRoot/subfolders restano quelli calcolati qui: il renderer non può
@@ -194,7 +250,23 @@ ipcMain.handle('run-import', async (_e, opts) => {
   // avrebbe potuto svuotare lo staging sotto i piedi della copia stessa.
   session.busy = true;
   try {
-    const copy = await stageFiles(plan, emitProgress, workers);
+    // Da lettore ottico le letture parallele fanno solo saltare la testina: lì
+    // poche copie contemporanee. Da USB, ZIP estratto o ISO (file su disco
+    // locale) molte di più.
+    const optical = !!(session.prepared && session.prepared.kind === 'optical' && !session.prepared.iso);
+    const concurrency = optical ? config.COPY_CONCURRENCY_OPTICAL : config.COPY_CONCURRENCY_FAST;
+    session.cancelRequested = false;
+
+    const copy = await stageFiles(plan, emitProgress, workers, {
+      concurrency,
+      isCancelled: () => session.cancelRequested,
+    });
+
+    // Interruzione arrivata durante la copia (o fra copia e invio)
+    if (copy.cancelled || session.cancelRequested) {
+      const reset = await cleanup({});
+      return { copy, send: null, iso, interrupted: true, reset };
+    }
 
     if (copy.copied === 0) {
       return { copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' };
@@ -226,16 +298,20 @@ ipcMain.handle('run-import', async (_e, opts) => {
 
     return { copy, send, iso, workers, turbo };
   } finally {
+    ch.flush();
     session.busy = false;
     session.send = null;
+    session.cancelRequested = false;
   }
 });
 
 // Interruzione dell'invio in corso. Il chiamante riceve comunque il risultato
 // da 'run-import', con interrupted:true e lo staging già ripulito.
 ipcMain.handle('stop-import', () => {
-  if (!session.send) return { stopped: false };
-  session.send.cancel();
+  if (!session.busy) return { stopped: false };
+  // vale sia durante la copia (controllata file per file) sia durante l'invio
+  session.cancelRequested = true;
+  if (session.send) session.send.cancel();
   return { stopped: true };
 });
 
@@ -272,29 +348,6 @@ function refreshPacsBadge() {
     });
   }
 }
-
-ipcMain.handle('series-preview', () => {
-  if (!session.plan) throw new Error('Nessuna classificazione disponibile.');
-  const r = buildSeriesPreview(session.plan.dataRoot);
-  session.seriesFiles = r.files;
-  for (const s of r.series) {
-    if (s.gray) s.gray = s.gray.buffer.slice(s.gray.byteOffset, s.gray.byteOffset + s.gray.byteLength);
-    if (s.rgb) s.rgb = s.rgb.buffer.slice(s.rgb.byteOffset, s.rgb.byteOffset + s.rgb.byteLength);
-  }
-  return { series: r.series, scanned: r.scanned, truncated: r.truncated };
-});
-
-// Immagine a grandezza piena di una serie, indicata per indice: i percorsi
-// restano nel main.
-ipcMain.handle('preview-series', (_e, id) => {
-  const files = session.seriesFiles || [];
-  const f = files[Number(id)];
-  if (!f) return { unsupported: 'no-path' };
-  const r = decodePixels(f);
-  if (r.gray) r.gray = r.gray.buffer.slice(r.gray.byteOffset, r.gray.byteOffset + r.gray.byteLength);
-  if (r.rgb) r.rgb = r.rgb.buffer.slice(r.rgb.byteOffset, r.rgb.byteOffset + r.rgb.byteLength);
-  return r;
-});
 
 ipcMain.handle('cleanup', async () => {
   // rm ricorsivo sullo staging: non deve poter partire mentre lo si sta usando

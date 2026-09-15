@@ -35,14 +35,25 @@ function showStep(name) {
   });
 }
 
+// i nodi della barra non cambiano: si cercano una volta sola
+let progressNodesCache = null;
+function progressNodes() {
+  if (!progressNodesCache) {
+    progressNodesCache = {
+      fills: document.querySelectorAll('.progress .sp__bar-fill'),
+      hubs: document.querySelectorAll('.progress .sp__hub'),
+      hubFills: document.querySelectorAll('.progress .sp__hub-fill'),
+      dots: document.querySelectorAll('.progress .sp__dot'),
+    };
+  }
+  return progressNodesCache;
+}
+
 // step: indice 0..2 ; frac: avanzamento 0..1 dentro lo step
 function setProgress(step, frac, opts) {
   opts = opts || {};
   frac = Math.max(0, Math.min(1, frac));
-  const fills = document.querySelectorAll('.progress .sp__bar-fill');
-  const hubs = document.querySelectorAll('.progress .sp__hub');
-  const hubFills = document.querySelectorAll('.progress .sp__hub-fill');
-  const dots = document.querySelectorAll('.progress .sp__dot');
+  const { fills, hubs, hubFills, dots } = progressNodes();
 
   fills.forEach((el, i) => {
     const f = i < step ? 1 : i === step ? frac : 0;
@@ -313,210 +324,7 @@ function renderStudy() {
     tree.appendChild(li);
   }
   $('override').value = '';
-
-  loadSeries();
 }
-
-// ---------------------------------------------------------------- reader interno
-
-const viewer = { bright: 1, contrast: 1, dragging: false, x0: 0, y0: 0 };
-
-function viewerMessage(text) {
-  $('dcm-canvas').classList.remove('ready');
-  $('viewer-msg').textContent = text;
-  $('viewer-msg').style.display = '';
-  $('viewer-meta').textContent = '';
-}
-
-// Torna alla griglia delle serie dal visore a immagine singola.
-function showSeriesGrid() {
-  $('series-grid').hidden = false;
-  $('viewer-stage').hidden = true;
-  $('viewer-hint').textContent = 'Una miniatura per serie: la prima immagine di ciascuna.';
-}
-
-function showSingleViewer() {
-  $('series-grid').hidden = true;
-  $('viewer-stage').hidden = false;
-  $('viewer-hint').textContent =
-    "Trascina per luminosità / contrasto · doppio clic per reimpostare · clic qui per tornare alle serie";
-}
-
-function applyViewerFilter() {
-  $('dcm-canvas').style.filter = `brightness(${viewer.bright}) contrast(${viewer.contrast})`;
-}
-
-async function loadPreview(seriesId, label) {
-  showSingleViewer();
-  viewerMessage('Caricamento anteprima…');
-  let r;
-  try {
-    r = await window.api.previewSeries(seriesId);
-  } catch (err) {
-    return viewerMessage('Errore anteprima: ' + err.message);
-  }
-  if (!r || r.unsupported) {
-    const map = {
-      compressed: 'Immagine compressa (JPEG/JPEG2000/RLE): anteprima non disponibile.',
-      'no-pixel-data': 'Il file non contiene dati immagine.',
-      'parse-error': 'File non interpretabile.',
-      'read-error': 'File non leggibile.',
-      truncated: 'Dati immagine incompleti.',
-      'too-large': 'Immagine troppo grande per l’anteprima.',
-      'no-path': 'Percorso non consentito per l’anteprima.',
-    };
-    return viewerMessage((map[r && r.unsupported] || 'Anteprima non disponibile.') +
-      (r && r.rows ? ` (${r.cols}×${r.rows})` : ''));
-  }
-
-  const cv = $('dcm-canvas');
-  const cx = cv.getContext('2d');
-  cv.width = r.cols;
-  cv.height = r.rows;
-  const img = cx.createImageData(r.cols, r.rows);
-
-  if (r.gray) {
-    const g = new Uint8Array(r.gray);
-    for (let i = 0, j = 0; i < g.length; i++, j += 4) {
-      img.data[j] = img.data[j + 1] = img.data[j + 2] = g[i];
-      img.data[j + 3] = 255;
-    }
-  } else if (r.rgb) {
-    const s = new Uint8Array(r.rgb);
-    for (let i = 0, j = 0; j < img.data.length; i += 3, j += 4) {
-      img.data[j] = s[i];
-      img.data[j + 1] = s[i + 1];
-      img.data[j + 2] = s[i + 2];
-      img.data[j + 3] = 255;
-    }
-  }
-  cx.putImageData(img, 0, 0);
-
-  viewer.bright = 1;
-  viewer.contrast = 1;
-  applyViewerFilter();
-  $('viewer-msg').style.display = 'none';
-  cv.classList.add('ready');
-  $('viewer-meta').textContent = `${label} · ${r.cols}×${r.rows} ${r.photometric || ''}`.trim();
-}
-
-// ---------------------------------------------------------------- serie
-
-const SERIES_MSG = {
-  compressed: 'Immagine compressa',
-  'no-pixel-data': 'Nessun dato immagine',
-  'parse-error': 'Non interpretabile',
-  'read-error': 'Non leggibile',
-  truncated: 'Dati incompleti',
-  'too-large': 'Troppo grande',
-  'unsupported-samples': 'Formato non gestito',
-};
-
-// Disegna una miniatura già ridotta dal main su un canvas.
-function paintThumb(cv, s) {
-  cv.width = s.cols;
-  cv.height = s.rows;
-  const cx = cv.getContext('2d');
-  const img = cx.createImageData(s.cols, s.rows);
-  if (s.gray) {
-    const g = new Uint8Array(s.gray);
-    for (let i = 0, j = 0; i < g.length; i++, j += 4) {
-      img.data[j] = img.data[j + 1] = img.data[j + 2] = g[i];
-      img.data[j + 3] = 255;
-    }
-  } else {
-    const t = new Uint8Array(s.rgb);
-    for (let i = 0, j = 0; j < img.data.length; i += 3, j += 4) {
-      img.data[j] = t[i];
-      img.data[j + 1] = t[i + 1];
-      img.data[j + 2] = t[i + 2];
-      img.data[j + 3] = 255;
-    }
-  }
-  cx.putImageData(img, 0, 0);
-}
-
-async function loadSeries() {
-  const grid = $('series-grid');
-  grid.textContent = '';
-  grid.hidden = false;
-  $('viewer-stage').hidden = true;
-  $('viewer-hint').textContent = 'Una miniatura per serie: la prima immagine di ciascuna.';
-  $('viewer-meta').textContent = 'lettura serie…';
-
-  let r;
-  try {
-    r = await window.api.seriesPreview();
-  } catch (err) {
-    $('viewer-meta').textContent = '';
-    grid.append(el('p', 'muted', 'Anteprima non disponibile: ' + err.message));
-    return;
-  }
-
-  if (!r.series.length) {
-    $('viewer-meta').textContent = '';
-    grid.append(el('p', 'muted', 'Nessuna serie DICOM leggibile su questo supporto.'));
-    return;
-  }
-
-  for (const s of r.series) {
-    const cell = el('div', 'series__cell');
-    const label = [s.number != null ? `Serie ${s.number}` : 'Serie', s.modality]
-      .filter(Boolean)
-      .join(' · ');
-
-    if (s.gray || s.rgb) {
-      const cv = document.createElement('canvas');
-      cv.className = 'series__thumb';
-      cv.title = 'Apri a schermo intero';
-      paintThumb(cv, s);
-      cv.addEventListener('click', () => loadPreview(s.id, label));
-      cell.appendChild(cv);
-    } else {
-      cell.appendChild(el('div', 'series__none', SERIES_MSG[s.unsupported] || 'Anteprima non disponibile'));
-    }
-
-    const cap = el('div', 'series__cap');
-    cap.append(el('b', null, label));
-    cap.append(el('span', null, `${s.description || '—'} · ${s.count} img`));
-    cell.appendChild(cap);
-
-    grid.appendChild(cell);
-  }
-
-  $('viewer-meta').textContent =
-    `${r.series.length} serie` + (r.truncated ? ` · primi ${r.scanned} file` : '');
-}
-
-(function bindViewerInteraction() {
-  const cv = $('dcm-canvas');
-  cv.addEventListener('mousedown', (e) => {
-    viewer.dragging = true;
-    viewer.x0 = e.clientX;
-    viewer.y0 = e.clientY;
-  });
-  window.addEventListener('mouseup', () => (viewer.dragging = false));
-  window.addEventListener('mousemove', (e) => {
-    if (!viewer.dragging) return;
-    viewer.bright = Math.max(0.2, Math.min(3, viewer.bright + (e.clientX - viewer.x0) * 0.005));
-    viewer.contrast = Math.max(0.2, Math.min(3, viewer.contrast - (e.clientY - viewer.y0) * 0.005));
-    viewer.x0 = e.clientX;
-    viewer.y0 = e.clientY;
-    applyViewerFilter();
-  });
-  cv.addEventListener('dblclick', () => {
-    viewer.bright = 1;
-    viewer.contrast = 1;
-    applyViewerFilter();
-  });
-  // clic sull'area attorno all'immagine: torna alla griglia delle serie
-  $('viewer-stage').addEventListener('click', (e) => {
-    if (e.target !== cv) showSeriesGrid();
-  });
-  $('viewer-hint').addEventListener('click', () => {
-    if (!$('viewer-stage').hidden) showSeriesGrid();
-  });
-})();
 
 $('btn-back-media').addEventListener('click', () => showStep('media'));
 $('btn-start').addEventListener('click', startImport);
@@ -526,7 +334,7 @@ $('btn-start').addEventListener('click', startImport);
 async function startImport() {
   state.finished = false;
 
-  $('log').textContent = '';
+  resetLog();
   $('summary').classList.add('hidden');
   $('btn-cleanup').classList.add('hidden');
   $('btn-restart').classList.add('hidden');
@@ -544,7 +352,7 @@ async function startImport() {
     result = await window.api.runImport($('override').value, $('turbo').checked);
   } catch (err) {
     $('btn-stop').classList.add('hidden');
-    $('log').textContent += '\nERRORE: ' + err.message + '\n';
+    appendLog(['', 'ERRORE: ' + err.message]);
     $('phase-label').textContent = 'Errore durante il trasferimento';
     $('phase-eta').textContent = '';
     $('sum-note').textContent = err.message;
@@ -565,7 +373,7 @@ $('btn-stop').addEventListener('click', async () => {
   try {
     await window.api.stopImport();
   } catch (err) {
-    $('log').textContent += '\nERRORE interruzione: ' + err.message + '\n';
+    appendLog(['', 'ERRORE interruzione: ' + err.message]);
   }
 });
 
@@ -595,11 +403,37 @@ window.api.onProgress((d) => {
   }
 });
 
-window.api.onLog((line) => {
-  const el = $('log');
-  el.textContent += line + '\n';
-  el.scrollTop = el.scrollHeight;
-});
+// ---------------------------------------------------------------- log
+
+// Il main manda le righe a blocchi; qui si tengono solo le ultime LOG_MAX e si
+// ridisegna al massimo una volta per frame. Prima ogni riga faceva
+// "textContent +=" (costo che cresce con la lunghezza del log) più un reflow
+// forzato da scrollTop: con migliaia di file il renderer andava in saturazione.
+const LOG_MAX = 400;
+const logLines = [];
+let logFrame = 0;
+
+function renderLog() {
+  logFrame = 0;
+  const box = $('log');
+  box.textContent = logLines.join('\n');
+  box.scrollTop = box.scrollHeight;
+}
+
+function appendLog(lines) {
+  for (const l of lines) logLines.push(String(l));
+  if (logLines.length > LOG_MAX) logLines.splice(0, logLines.length - LOG_MAX);
+  if (!logFrame) logFrame = requestAnimationFrame(renderLog);
+}
+
+function resetLog() {
+  logLines.length = 0;
+  if (logFrame) cancelAnimationFrame(logFrame);
+  logFrame = 0;
+  $('log').textContent = '';
+}
+
+window.api.onLog((lines) => appendLog(Array.isArray(lines) ? lines : [lines]));
 
 function onImportDone(result) {
   state.finished = true;
@@ -689,9 +523,6 @@ $('btn-restart').addEventListener('click', () => {
   $('btn-cleanup').classList.add('hidden');
   $('btn-stop').classList.add('hidden');
   $('btn-to-study').disabled = true;
-  $('series-grid').textContent = '';
-  showSingleViewer();
-  viewerMessage('Nessuna immagine caricata.');
   showStep('media');
 });
 

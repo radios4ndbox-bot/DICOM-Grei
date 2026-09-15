@@ -55,7 +55,9 @@ body {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  /* colonna unica centrata: il pannello anteprima non c'è più */
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
   gap: 22px;
   padding: 8px 22px 44px;
   align-items: start;
@@ -66,55 +68,6 @@ main { padding: 0; }
 /* [hidden] deve vincere su qualsiasi display: dichiarato qui sotto,
    altrimenti nascondere un elemento da JS non ha effetto */
 [hidden] { display: none !important; }
-
-/* ---- preview / reader interno --------------------------------------- */
-.viewer {
-  position: sticky;
-  top: 12px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--panel);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.viewer__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line);
-  font-weight: 600;
-  font-size: 13px;
-}
-.viewer__stage {
-  position: relative;
-  background: #0b1417;
-  min-height: 360px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-#dcm-canvas {
-  max-width: 100%;
-  max-height: 460px;
-  image-rendering: pixelated;
-  display: none;
-  cursor: crosshair;
-}
-#dcm-canvas.ready { display: block; }
-.viewer__msg {
-  color: #8fa3a8;
-  font-size: 13px;
-  padding: 0 20px;
-  text-align: center;
-}
-.viewer__hint { padding: 8px 14px; font-size: 11px; border-top: 1px solid var(--line); }
-
-@media (max-width: 1000px) {
-  .workspace { grid-template-columns: 1fr; }
-  .viewer { position: static; }
-}
 
 .copyright {
   position: fixed;
@@ -331,55 +284,6 @@ code { background: #eef4f6; padding: 1px 5px; border-radius: 4px; font-family: "
 .modal__title { margin: 0 0 8px; font-size: 19px; font-weight: 600; color: var(--ink); }
 .modal__text { margin: 0 0 20px; font-size: 13px; color: var(--muted); line-height: 1.5; }
 .modal__card button { min-width: 130px; }
-
-/* ---- griglia serie: un quadrante per serie ---------------------------- */
-.series {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 8px;
-  padding: 10px;
-  overflow-y: auto;
-  align-content: start;
-  flex: 1;
-  min-height: 0;
-  max-height: 470px;
-}
-
-.series__cell {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-  background: #0b1418;
-  display: flex;
-  flex-direction: column;
-}
-.series__thumb {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: contain;
-  display: block;
-  background: #0b1418;
-}
-.series__none {
-  aspect-ratio: 1 / 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 6px;
-  font-size: 10px;
-  line-height: 1.35;
-  color: #8fa6ad;
-}
-.series__cap {
-  padding: 5px 7px;
-  background: var(--panel);
-  border-top: 1px solid var(--line);
-  font-size: 10px;
-  line-height: 1.35;
-}
-.series__cap b { display: block; color: var(--ink); font-weight: 600; }
-.series__cap span { color: var(--muted); }
 
 /* ---- ingranaggio impostazioni ---------------------------------------- */
 .icon-btn {

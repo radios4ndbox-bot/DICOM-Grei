@@ -57,15 +57,39 @@ function formatDate(d) {
   return `${d.slice(6, 8)}/${d.slice(4, 6)}/${d.slice(0, 4)}`;
 }
 
-// I metadati stanno nei primi KB: non ha senso caricare in RAM un file enorme
-// (o non-file) trovato su un supporto non fidato solo per leggere l'anagrafica.
-const MAX_INFO_BYTES = 256 * 1024 * 1024;
+// I metadati stanno nei primi KB: su un DVD leggere per intero un'immagine da
+// diversi MB solo per l'anagrafica costa secondi. Si leggono 128 KB e, se non
+// bastano (blocchi privati voluminosi), 4 MB.
+const HEADER_STEPS = [128 * 1024, 4 * 1024 * 1024];
+
+function readHeader(file, size) {
+  for (const step of HEADER_STEPS) {
+    const want = Math.min(size, step);
+    let fd;
+    try {
+      const buf = Buffer.allocUnsafe(want);
+      fd = fs.openSync(file, 'r');
+      const read = fs.readSync(fd, buf, 0, want, 0);
+      // solo i byte letti: la coda di allocUnsafe non è inizializzata
+      return dicomParser.parseDicom(buf.subarray(0, read), { untilTag: 'x7fe00010' });
+    } catch {
+      // intestazione troncata: si riprova più in grande
+    } finally {
+      if (fd !== undefined) {
+        try {
+          fs.closeSync(fd);
+        } catch {}
+      }
+    }
+    if (want >= size) break; // il file era già stato letto per intero
+  }
+  throw new Error('intestazione non leggibile');
+}
 
 function parseOne(file) {
   const st = fs.statSync(file);
-  if (!st.isFile() || st.size > MAX_INFO_BYTES) throw new Error('file non idoneo');
-  const buf = fs.readFileSync(file);
-  const ds = dicomParser.parseDicom(buf);
+  if (!st.isFile() || st.size < 132) throw new Error('file non idoneo');
+  const ds = readHeader(file, st.size);
   const name = formatName(ds.string('x00100010'));
   const modality = (ds.string('x00080060') || '').toUpperCase();
   return {

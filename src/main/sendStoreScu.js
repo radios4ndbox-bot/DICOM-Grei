@@ -86,7 +86,16 @@ function insideStaging(p) {
  */
 function runStorescu(args, { onLog, onFile, register }) {
   return new Promise((resolve, reject) => {
-    const child = spawn(config.STORESCU, args, { windowsHide: true });
+    // Variabili lette da DCMTK (dcmnet), verificate con "storescu -ll trace":
+    // - TCP_NODELAY: senza variabile questa build lascia l'algoritmo di Nagle
+    //   ATTIVO ("using the default value (0)"). Il C-STORE è uno scambio
+    //   richiesta/risposta per ogni file: Nagle insieme all'ACK ritardato di
+    //   Windows può aggiungere un'attesa a ogni singolo file.
+    // - TCP_BUFFER_LENGTH: senza variabile DCMTK usa i buffer di sistema
+    //   (auto-tuning). Si passa solo se impostato esplicitamente.
+    const env = { ...process.env, TCP_NODELAY: '1' };
+    if (config.TCP_BUFFER_BYTES > 0) env.TCP_BUFFER_LENGTH = String(config.TCP_BUFFER_BYTES);
+    const child = spawn(config.STORESCU, args, { windowsHide: true, env });
 
     let buf = '';
     let current = null;

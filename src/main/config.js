@@ -73,6 +73,16 @@ module.exports = {
   // Nessuna risposta dal PACS per questo tempo => avviso all'operatore
   STALL_WARN_MS: 45000,
 
+  // ---- Prestazioni --------------------------------------------------------
+  // Copie contemporanee durante lo staging (vedi copyStage). Da lettore ottico
+  // restano basse: letture parallele su un solo disco fanno saltare la testina.
+  COPY_CONCURRENCY_FAST: 8,
+  COPY_CONCURRENCY_OPTICAL: 2,
+
+  // Passato a storescu come variabile d'ambiente TCP_BUFFER_LENGTH, letta da
+  // DCMTK (dcmnet). 0 = non passarla: DCMTK usa i buffer di sistema (verificato con -ll trace).
+  TCP_BUFFER_BYTES: 0,
+
   // Prefisso delle sottocartelle di staging usate dai worker paralleli
   PART_PREFIX: 'part_',
 

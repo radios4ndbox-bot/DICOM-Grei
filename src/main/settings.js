@@ -98,6 +98,15 @@ const SCHEMA = [
         max: 600,
         unit: 's',
       },
+      {
+        key: 'TCP_BUFFER_KB',
+        label: 'Buffer TCP verso il PACS',
+        type: 'int',
+        min: 0,
+        max: 16384,
+        unit: 'KB',
+        hint: '0 = automatico di Windows (consigliato). Diverso da 0 imposta TCP_BUFFER_LENGTH di DCMTK',
+      },
     ],
   },
   {
@@ -111,6 +120,21 @@ const SCHEMA = [
         max: 300,
         unit: 's',
         hint: 'Oltre questo tempo il file viene saltato (CD/DVD rovinati)',
+      },
+      {
+        key: 'COPY_CONCURRENCY_FAST',
+        label: 'Copie in parallelo (USB, ZIP, ISO)',
+        type: 'int',
+        min: 1,
+        max: 32,
+      },
+      {
+        key: 'COPY_CONCURRENCY_OPTICAL',
+        label: 'Copie in parallelo (CD/DVD)',
+        type: 'int',
+        min: 1,
+        max: 8,
+        hint: 'Su un lettore ottico valori alti rallentano: la testina salta fra i file',
       },
     ],
   },
@@ -130,6 +154,9 @@ const DEFAULTS = {
   RETRY_BACKOFF_S: 10,
   STALL_WARN_S: 45,
   FILE_COPY_TIMEOUT_S: 15,
+  TCP_BUFFER_KB: 0,
+  COPY_CONCURRENCY_FAST: 8,
+  COPY_CONCURRENCY_OPTICAL: 2,
 };
 
 const FIELDS = new Map();
@@ -222,6 +249,10 @@ function apply() {
 
   config.STALL_WARN_MS = current.STALL_WARN_S * 1000;
   config.FILE_COPY_TIMEOUT_MS = current.FILE_COPY_TIMEOUT_S * 1000;
+
+  config.TCP_BUFFER_BYTES = current.TCP_BUFFER_KB * 1024;
+  config.COPY_CONCURRENCY_FAST = current.COPY_CONCURRENCY_FAST;
+  config.COPY_CONCURRENCY_OPTICAL = current.COPY_CONCURRENCY_OPTICAL;
 }
 
 function load() {
