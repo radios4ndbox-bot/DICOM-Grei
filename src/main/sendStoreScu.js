@@ -8,28 +8,77 @@ const config = require('./config');
 
 const ALLOWED_PATTERNS = ['MP*', '*.dcm'];
 
+// Ultima riga di comando lanciata: il main la offre all'operatore per rilanciare
+// lo stesso invio da cmd, identico, quando vuole confrontare.
+let lastCommand = '';
+
 // CreateProcess di Windows taglia la riga di comando a 32767 caratteri. I
 // ritentativi passano i file uno per uno come argomenti: si spezzano per
 // lunghezza, non per numero, perché con percorsi lunghi 200 file bastano a
 // superare il limite e il processo non parte nemmeno.
 const CMDLINE_BUDGET = 24000;
 
+// Sintassi di trasferimento proposte in associazione.
+//
+// ATTENZIONE a cosa significa "lossless" qui: questa build di storescu NON ha
+// codec JPEG linkati (dipende solo da dcmdata/dcmnet/dcmtls/oflog/ofstd), quindi
+// non ricomprime e non decomprime NULLA. I byte del dataset partono come stanno
+// sul supporto, sempre, con qualsiasi opzione --propose-*.
+//
+// A cosa serve allora --propose-lossless: a far accettare al PACS un contesto
+// di presentazione con la sintassi JPEG lossless, che serve ai file che sono
+// GIA' compressi cosi' sul CD (moltissime TC e RM lo sono). Con
+// --propose-uncompr quegli stessi file non troverebbero nessun contesto e
+// uscirebbero come "No presentation context for:", cioe' persi.
+const PROPOSE_FLAG = {
+  lossless: '--propose-lossless',
+  uncompr: '--propose-uncompr',
+  little: '--propose-little',
+  implicit: '--propose-implicit',
+};
+
 // `head` sono le opzioni prima del peer, `tail` gli argomenti posizionali dopo.
 function buildArgs(head, tail) {
-  return [
-    '-v',
-    ...head,
-    '--propose-lossless',
-    // Senza questi, DCMTK aspetta il PACS all'infinito (default: unlimited).
-    '--dimse-timeout', String(config.DIMSE_TIMEOUT_S),
-    '--acse-timeout', String(config.ACSE_TIMEOUT_S),
-    '--timeout', String(config.CONNECT_TIMEOUT_S),
+  const args = ['-v', ...head, PROPOSE_FLAG[config.PROPOSE_TS] || PROPOSE_FLAG.lossless];
+
+  // Senza questi, DCMTK aspetta il PACS all'infinito (default: unlimited).
+  // Si possono togliere per riprodurre esattamente un lancio a mano da cmd:
+  // resta comunque la guardia di inattivita' di questo modulo, che un lancio
+  // da cmd non ha.
+  if (config.SEND_TIMEOUTS) {
+    args.push(
+      '--dimse-timeout', String(config.DIMSE_TIMEOUT_S),
+      '--acse-timeout', String(config.ACSE_TIMEOUT_S),
+      '--timeout', String(config.CONNECT_TIMEOUT_S)
+    );
+  }
+
+  args.push(
     '-aet', config.SRC_AET,
     '-aec', config.DEST_AET,
     config.PACS_IP,
     config.PACS_PORT,
-    ...tail,
-  ];
+    ...tail
+  );
+  return args;
+}
+
+/**
+ * Riga di comando pronta da incollare in `cmd`.
+ *
+ * Serve a confrontare come si deve: l'app e il lancio a mano devono usare
+ * ESATTAMENTE gli stessi argomenti, altrimenti si confrontano due cose diverse.
+ * Le virgolette seguono le regole di CreateProcess, che e' anche il modo in cui
+ * spawn() passa gli argomenti: quello che si incolla e' quello che gira.
+ */
+function quoteForCmd(arg) {
+  const s = String(arg);
+  if (s !== '' && !/[\s"^&|<>()%!]/.test(s)) return s;
+  return '"' + s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1') + '"';
+}
+
+function commandLine(args) {
+  return [config.STORESCU, ...args].map(quoteForCmd).join(' ');
 }
 
 function matcher(pattern) {
@@ -114,7 +163,8 @@ function runStorescu(args, { onLog, onFile, register }) {
     //   Windows può aggiungere un'attesa a ogni singolo file.
     // - TCP_BUFFER_LENGTH: senza variabile DCMTK usa i buffer di sistema
     //   (auto-tuning). Si passa solo se impostato esplicitamente.
-    const env = { ...process.env, TCP_NODELAY: '1' };
+    const env = { ...process.env };
+    if (config.TCP_NODELAY_ON) env.TCP_NODELAY = '1';
     if (config.TCP_BUFFER_BYTES > 0) env.TCP_BUFFER_LENGTH = String(config.TCP_BUFFER_BYTES);
 
     let child;
@@ -407,7 +457,16 @@ function sendStoreScu(opts, emit) {
   // qui il proprio esito: il conteggio delle associazioni mute serve a decidere
   // se ha ancora senso ritentare.
   const runOne = async (args) => {
-    emit({ type: 'log', line: `> storescu ${args.join(' ')}` });
+    const line = commandLine(args);
+    emit({ type: 'log', line: '> ' + line });
+    // Si offre alla copia solo la forma "+sd <cartella>": l'unico pezzo
+    // variabile e' lo staging, che decidiamo noi. La forma con l'elenco dei
+    // file conterrebbe nomi presi dal supporto, e cmd espande i %...% anche
+    // dentro le virgolette.
+    if (args.includes('+sd')) {
+      lastCommand = line;
+      emit({ type: 'command', line });
+    }
     const r = await runStorescu(args, { onLog, onFile, register });
     if (r.exitCode) state.exitCode = r.exitCode;
     if (r.stallKilled) state.stallKills++;
@@ -600,4 +659,11 @@ function sendStoreScu(opts, emit) {
   return promise;
 }
 
-module.exports = { sendStoreScu, chunkByLength, insideStaging };
+module.exports = {
+  sendStoreScu,
+  chunkByLength,
+  insideStaging,
+  commandLine,
+  quoteForCmd,
+  lastSentCommand: () => lastCommand,
+};

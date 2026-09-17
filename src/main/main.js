@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, clipboard, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
@@ -9,7 +9,7 @@ const { detectMedia } = require('./detectMedia');
 const { prepareSource } = require('./isoZip');
 const { scanMedia } = require('./scan');
 const { stageFiles } = require('./copyStage');
-const { sendStoreScu } = require('./sendStoreScu');
+const { sendStoreScu, lastSentCommand } = require('./sendStoreScu');
 const { cleanup, dailyPurge } = require('./cleanup');
 const { startPreview } = require('./preview');
 
@@ -293,10 +293,17 @@ ipcMain.handle('run-import', async (_e, opts) => {
 
   const iso = (session.prepared && session.prepared.iso) || null;
 
-  // Turbo = più associazioni DICOM in parallelo. Di default se ne usano poche
-  // per non caricare né il PC dell'operatore né il PACS.
-  const turbo = !!(opts && opts.turbo);
-  const workers = turbo ? config.WORKERS_TURBO : config.WORKERS_NORMAL;
+  // Quante associazioni DICOM in parallelo.
+  //
+  // 'single' ne usa UNA sola: lo staging non viene spezzato in part_NN e parte
+  // un solo storescu con "+sd <staging>", cioè esattamente quello che si lancia
+  // a mano da cmd. È la modalità da scegliere se il PACS limita le associazioni
+  // contemporanee per AE title: oltre quel limite le richieste in più vengono
+  // rifiutate, e sono quelle che l'operatore vede "perdersi".
+  const mode = opts && typeof opts.mode === 'string' ? opts.mode : 'normal';
+  const workers =
+    mode === 'single' ? 1 : mode === 'turbo' ? config.WORKERS_TURBO : config.WORKERS_NORMAL;
+  const turbo = mode === 'turbo';
 
   // `busy` copre TUTTA l'importazione, copia compresa. `session.send` da solo
   // non basta: viene valorizzato solo dopo lo staging, e la copia di migliaia
@@ -361,7 +368,7 @@ ipcMain.handle('run-import', async (_e, opts) => {
       return { copy, send, iso, interrupted: true, reset };
     }
 
-    return { copy, send, iso, workers, turbo };
+    return { copy, send, iso, workers, turbo, mode };
   } finally {
     ch.flush();
     if (preview) preview.kill();
@@ -374,6 +381,15 @@ ipcMain.handle('run-import', async (_e, opts) => {
 
 // Interruzione dell'invio in corso. Il chiamante riceve comunque il risultato
 // da 'run-import', con interrupted:true e lo staging già ripulito.
+// La riga dell'ultimo invio negli appunti. Il renderer non la vede mai: chiede
+// la copia e basta, il testo resta nel main.
+ipcMain.handle('copy-command', () => {
+  const line = lastSentCommand();
+  if (!line) return { ok: false };
+  clipboard.writeText(line);
+  return { ok: true };
+});
+
 ipcMain.handle('stop-import', () => {
   if (!session.busy) return { stopped: false };
   // vale sia durante la copia (controllata file per file) sia durante l'invio

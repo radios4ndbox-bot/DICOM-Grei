@@ -55,6 +55,41 @@ per contenerlo:
 | Copia e invio in parallelo | `fs.copyFile` (CopyFileW) con concorrenza, e N associazioni DICOM simultanee, una per sottocartella `part_NN`. |
 | Anteprima a costo (quasi) zero | I riquadri si costruiscono sui file **già copiati in locale**, riusando I/O appena fatto: il supporto non viene mai riletto. |
 
+## «Da cmd va più veloce e non perde un'associazione»
+
+Osservazione di campo che vale la pena chiarire, perché porta a una conclusione
+sbagliata.
+
+**L'app già lancia `storescu.exe` direttamente**, con `child_process.spawn` e
+senza shell: non c'è nessun `cmd.exe` in mezzo da togliere. Metterlo
+*aggiungerebbe* un processo, e per giunta romperebbe l'abbattimento dei
+processi appesi (si ucciderebbe `cmd`, non `storescu`).
+
+**Il trasferimento è già bit per bit identico.** Il binario incluso dipende solo
+da `dcmdata`, `dcmnet`, `dcmtls`, `oflog`, `ofstd`: **nessun codec JPEG
+linkato**, quindi `storescu` non ricomprime e non decomprime nulla, con
+qualsiasi opzione. `--propose-lossless` non ha niente a che vedere con la
+qualità: serve a proporre anche il contesto di presentazione JPEG lossless, di
+cui hanno bisogno i file che sul CD sono **già** compressi così (gran parte di
+TC e RM). Toglierlo li farebbe uscire come `No presentation context for:`, cioè
+persi davvero. Per questo resta il default.
+
+Le differenze vere fra un lancio a mano e l'app sono altre, ed è su quelle che
+si agisce:
+
+| Differenza | Cosa fare |
+|---|---|
+| A mano parte **una sola associazione**; l'app ne apre 2 (normale) o 6 (turbo). Se Synapse limita le associazioni contemporanee per AE title, quelle in più vengono rifiutate | Tendina **Invio → Sequenziale**: una sola associazione, staging non spezzato, un solo `storescu` con `+sd`. È il lancio manuale, dentro l'app |
+| A mano non ci sono timeout: DCMTK aspetta il PACS all'infinito. L'app glieli passa, e un PACS lento può far cadere l'associazione | Impostazioni → *Riga di comando di storescu* → **Passa i timeout a storescu**: spegnendolo si aspetta come da cmd. La guardia di inattività dell'app resta, quindi resta recuperabile |
+| A mano `TCP_NODELAY` non è impostata | Stessa sezione, si può spegnere |
+| A mano non c'è la copia in staging | Quella serve (percorsi con spazi, DVD rovinati, invio parziale) e non si toglie |
+
+Per confrontare **come si deve**, il pulsante **«Copia comando»** nello step 3
+mette negli appunti la riga esatta dell'ultimo invio, già con le virgolette
+giuste. Lo staging resta sul disco per tutta la giornata: si incolla in `cmd` e
+si rilancia lo stesso invio sugli stessi file. Se a quel punto le due esecuzioni
+si comportano ancora diversamente, la differenza non è negli argomenti.
+
 ## Stalli durante l'invio
 
 Un invio che resta appeso è il guasto peggiore: la barra si ferma e non c'è modo

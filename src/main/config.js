@@ -47,6 +47,25 @@ module.exports = {
   // Timeout lettura per singolo file (DVD danneggiati)
   FILE_COPY_TIMEOUT_MS: 15000,
 
+  // ---- Riga di comando di storescu -------------------------------------
+  // Sintassi di trasferimento proposte: 'lossless' | 'uncompr' | 'little' | 'implicit'.
+  //
+  // Il default resta 'lossless' e NON significa "comprimi": questa build di
+  // storescu non ha codec JPEG linkati, quindi non ricomprime mai nulla e i
+  // byte partono come stanno sul supporto. Serve a proporre anche il contesto
+  // JPEG lossless, di cui hanno bisogno i file che sul CD sono GIA' compressi
+  // cosi' (gran parte di TC e RM). Con 'uncompr' quei file uscirebbero come
+  // "No presentation context for:".
+  PROPOSE_TS: 'lossless',
+
+  // Passare i timeout a storescu. Toglierli riproduce un lancio a mano da cmd,
+  // dove DCMTK aspetta il PACS senza limiti.
+  SEND_TIMEOUTS: true,
+
+  // TCP_NODELAY=1 nell'ambiente di storescu: disattiva Nagle. Un lancio da cmd
+  // non la imposta, quindi va tolta se si vuole il confronto fedele.
+  TCP_NODELAY_ON: true,
+
   // ---- Trasferimento verso il PACS -------------------------------------
   // Una singola associazione invia i file in sequenza e aspetta la risposta
   // di ogni C-STORE: il collo di bottiglia è il round-trip, non la CPU.

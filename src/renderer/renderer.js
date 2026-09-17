@@ -124,19 +124,35 @@ function buildSettingsForm(desc) {
       row.append(lab);
 
       const box = el('div', 'set__input');
-      const inp = document.createElement('input');
+      let inp;
+      if (f.type === 'enum') {
+        inp = document.createElement('select');
+        for (const o of f.options) {
+          const opt = el('option', null, o.label);
+          opt.value = o.value;
+          inp.append(opt);
+        }
+        inp.value = String(desc.values[f.key]);
+      } else if (f.type === 'bool') {
+        inp = document.createElement('input');
+        inp.type = 'checkbox';
+        inp.checked = desc.values[f.key] === true || desc.values[f.key] === 'true';
+      } else {
+        inp = document.createElement('input');
+        if (f.type === 'int') {
+          inp.type = 'number';
+          inp.min = String(f.min);
+          inp.max = String(f.max);
+          inp.step = '1';
+        } else {
+          inp.type = 'text';
+          inp.maxLength = f.type === 'aet' ? 16 : 253;
+        }
+        inp.value = String(desc.values[f.key]);
+      }
       inp.id = 'set-' + f.key;
       inp.dataset.key = f.key;
-      if (f.type === 'int') {
-        inp.type = 'number';
-        inp.min = String(f.min);
-        inp.max = String(f.max);
-        inp.step = '1';
-      } else {
-        inp.type = 'text';
-        inp.maxLength = f.type === 'aet' ? 16 : 253;
-      }
-      inp.value = String(desc.values[f.key]);
+      inp.dataset.type = f.type;
       box.append(inp);
       if (f.unit) box.append(el('span', 'set__unit', f.unit));
       row.append(box);
@@ -144,7 +160,8 @@ function buildSettingsForm(desc) {
       const bits = [];
       if (f.hint) bits.push(f.hint);
       if (f.type === 'int') bits.push(`${f.min}–${f.max}`);
-      bits.push(`predefinito ${desc.defaults[f.key]}`);
+      const def = desc.defaults[f.key];
+      bits.push(`predefinito ${def === true ? 'acceso' : def === false ? 'spento' : def}`);
       row.append(el('span', 'set__hint', bits.join(' · ')));
 
       wrap.append(row);
@@ -158,8 +175,9 @@ function buildSettingsForm(desc) {
 
 function collectSettings() {
   const out = {};
-  for (const inp of $('set-body').querySelectorAll('input[data-key]')) {
-    out[inp.dataset.key] = inp.value.trim();
+  for (const inp of $('set-body').querySelectorAll('[data-key]')) {
+    if (inp.dataset.type === 'bool') out[inp.dataset.key] = inp.checked ? 'true' : 'false';
+    else out[inp.dataset.key] = inp.value.trim();
   }
   return out;
 }
@@ -525,6 +543,26 @@ function renderStudy() {
   $('override').value = '';
 }
 
+// Nota sotto la tendina: la modalità sequenziale è quella che riproduce un
+// lancio a mano da cmd, ed è la prima cosa da provare se il PACS rifiuta le
+// associazioni in più.
+const SEND_MODE_NOTE = {
+  normal: 'Poche associazioni DICOM in parallelo. Buon compromesso fra velocità e carico sul PACS.',
+  turbo:
+    'Molte associazioni in parallelo: molto più veloce sui supporti grandi, carica di più PC e PACS. ' +
+    'Se compare «Association Request Failed» il PACS ne accetta meno: scendere di modalità.',
+  single:
+    'Una sola associazione, staging non spezzato: identico a lanciare storescu a mano da cmd. ' +
+    'Da usare se il PACS rifiuta le associazioni contemporanee. Più lento, ma è il comportamento ' +
+    'che in cmd non perde mai un\'associazione.',
+};
+
+function updateSendModeNote() {
+  $('send-mode-note').textContent = SEND_MODE_NOTE[$('send-mode').value] || '';
+}
+$('send-mode').addEventListener('change', updateSendModeNote);
+updateSendModeNote();
+
 $('btn-back-media').addEventListener('click', () => showStep('media'));
 $('btn-start').addEventListener('click', startImport);
 
@@ -538,6 +576,7 @@ async function startImport() {
   $('btn-cleanup').classList.add('hidden');
   $('btn-restart').classList.add('hidden');
   $('cleanup-status').textContent = '';
+  $('btn-copy-cmd').classList.add('hidden');
   $('send-ok').textContent = 'Success: 0';
   $('send-err').textContent = 'Error: 0';
   $('copy-skipped').textContent = '';
@@ -548,7 +587,7 @@ async function startImport() {
 
   let result;
   try {
-    result = await window.api.runImport($('override').value, $('turbo').checked);
+    result = await window.api.runImport($('override').value, $('send-mode').value);
   } catch (err) {
     $('btn-stop').classList.add('hidden');
     appendLog(['', 'ERRORE: ' + err.message]);
@@ -690,7 +729,11 @@ function onImportDone(result) {
   if (result.copy && result.copy.skipped) {
     notes.push(`${result.copy.skipped} file non copiati (timeout/lettura): invio parziale.`);
   }
-  if (result.turbo) notes.push(`Modalità turbo: ${result.workers} associazioni in parallelo.`);
+  if (result.mode === 'single') {
+    notes.push('Invio sequenziale: una sola associazione, come da riga di comando.');
+  } else if (result.workers) {
+    notes.push(`${result.workers} associazioni in parallelo.`);
+  }
   if (result.iso) notes.push('ISO montata: verrà smontata alla pulizia.');
   if (preview.tiles.size) {
     notes.push(`Anteprima: ${preview.tiles.size} serie riconosciute durante la copia.`);
@@ -704,6 +747,9 @@ function onImportDone(result) {
   $('btn-cleanup').disabled = !!result.interrupted;
   $('btn-restart').classList.remove('hidden');
   $('btn-cleanup').dataset.iso = result.iso || '';
+  // lo staging resta sul disco per la giornata: la riga copiata si può
+  // rilanciare da cmd sugli stessi file, per confrontare come si deve
+  if (result.send) $('btn-copy-cmd').classList.remove('hidden');
 
   if (result.interrupted) {
     $('cleanup-status').textContent = 'Staging azzerato automaticamente dopo l’interruzione.';
@@ -728,6 +774,17 @@ $('btn-cleanup').addEventListener('click', async () => {
   }
 });
 
+$('btn-copy-cmd').addEventListener('click', async () => {
+  try {
+    const r = await window.api.copyCommand();
+    $('cleanup-status').textContent = r && r.ok
+      ? 'Comando storescu copiato: incollalo in cmd per rilanciare lo stesso invio sugli stessi file.'
+      : 'Nessun comando da copiare: il trasferimento non è ancora partito.';
+  } catch (err) {
+    $('cleanup-status').textContent = 'Errore copia: ' + err.message;
+  }
+});
+
 $('btn-restart').addEventListener('click', () => {
   previewReset();
   state.drive = state.prepared = state.plan = null;
@@ -738,6 +795,7 @@ $('btn-restart').addEventListener('click', () => {
   $('phase-eta').textContent = '';
   $('btn-cleanup').disabled = false;
   $('btn-cleanup').classList.add('hidden');
+  $('btn-copy-cmd').classList.add('hidden');
   $('btn-stop').classList.add('hidden');
   $('btn-to-study').disabled = true;
   showStep('media');

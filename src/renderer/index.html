@@ -77,11 +77,15 @@
         </select>
       </div>
       <div class="row">
-        <label class="check" for="turbo">
-          <input type="checkbox" id="turbo" />
-          <span>Modalità turbo</span>
-        </label>
-        <span class="muted" id="turbo-note">Più associazioni al PACS in parallelo: molto più veloce sui supporti grandi, carica di più PC e PACS.</span>
+        <label for="send-mode">Invio</label>
+        <select id="send-mode">
+          <option value="normal">Normale · poche associazioni in parallelo</option>
+          <option value="turbo">Turbo · molte associazioni in parallelo</option>
+          <option value="single">Sequenziale · una sola associazione (come da CMD)</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="muted" id="send-mode-note"></span>
       </div>
       <div class="row between">
         <button id="btn-back-media" class="ghost">Indietro</button>
@@ -142,6 +146,7 @@
 
       <div class="row between" id="finish-actions">
         <button id="btn-cleanup" class="danger hidden">Pulisci C:\tmp\dicom_import</button>
+        <button id="btn-copy-cmd" class="ghost hidden" title="Copia la riga di comando di storescu, pronta da incollare in cmd">Copia comando</button>
         <button id="btn-restart" class="ghost hidden">Nuova importazione</button>
       </div>
       <p id="cleanup-status" class="muted"></p>
