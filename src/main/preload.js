@@ -25,4 +25,6 @@ contextBridge.exposeInMainWorld('api', {
   onProgress: (cb) => subscribe('progress', cb),
   onLog: (cb) => subscribe('log', cb),
   onPacsChanged: (cb) => subscribe('pacs-changed', cb),
+  // riquadri dell'anteprima: arrivano dal main mentre la copia è in corso
+  onPreview: (cb) => subscribe('preview', cb),
 });

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'" />
+        content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; form-action 'none'; base-uri 'none'" />
   <title>DICOM Import Tool</title>
   <link rel="icon" type="image/svg+xml" href="assets/globe.svg" />
   <link rel="stylesheet" href="styles.css" />
@@ -61,6 +61,7 @@
         <div class="kv"><span>Tipo rilevato</span><strong id="clf-type">—</strong></div>
         <div class="kv"><span>Scan pattern</span><code id="clf-pattern">—</code></div>
         <div class="kv"><span>File totali</span><strong id="clf-total">—</strong></div>
+        <div class="kv hidden" id="clf-junk-row"><span>Scartati (non immagini)</span><strong id="clf-junk">0</strong></div>
         <p id="clf-reasoning" class="muted"></p>
         <ul id="clf-tree" class="tree"></ul>
       </div>
@@ -147,6 +148,34 @@
     </section>
    </main>
 
+   <!-- Anteprima: un riquadro per serie/orientamento, costruito durante la
+        copia in locale dai file gia' presenti in C:\tmp\dicom_import -->
+   <aside class="viewer" id="viewer">
+     <div class="viewer__head">
+       <span>Anteprima</span>
+       <span id="viewer-meta" class="muted mono"></span>
+     </div>
+
+     <div class="viewer__grid" id="viewer-grid"></div>
+
+     <p class="viewer__empty" id="viewer-empty">
+       I riquadri compaiono durante la copia in locale: la prima immagine di ogni
+       serie — assiale, coronale e sagittale in TC, una per proiezione in RX.
+     </p>
+
+     <div class="viewer__zoom" id="viewer-zoom" hidden>
+       <div class="viewer__zoom-bar">
+         <span class="mono" id="zoom-caption"></span>
+         <button class="icon-btn" id="zoom-close" title="Chiudi" aria-label="Chiudi ingrandimento">✕</button>
+       </div>
+       <div class="viewer__zoom-stage">
+         <canvas id="zoom-canvas" width="16" height="16"></canvas>
+       </div>
+       <p class="viewer__hint muted">
+         Trascina per luminosità / contrasto · doppio clic per reimpostare
+       </p>
+     </div>
+   </aside>
   </div>
 
   <p class="copyright">© 2026 StructuRad. All rights reserved. Powered by RadioPako.</p>

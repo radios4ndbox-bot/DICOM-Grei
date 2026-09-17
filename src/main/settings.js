@@ -99,6 +99,17 @@ const SCHEMA = [
         unit: 's',
       },
       {
+        key: 'SEND_STALL_KILL_S',
+        label: 'Abbatti associazione muta dopo',
+        type: 'int',
+        min: 30,
+        max: 3600,
+        unit: 's',
+        hint:
+          'Se da storescu non arriva un byte per questo tempo il processo viene ucciso ' +
+          'e i file non inviati rientrano nei ritentativi. Evita gli invii appesi per sempre',
+      },
+      {
         key: 'TCP_BUFFER_KB',
         label: 'Buffer TCP verso il PACS',
         type: 'int',
@@ -106,6 +117,29 @@ const SCHEMA = [
         max: 16384,
         unit: 'KB',
         hint: '0 = automatico di Windows (consigliato). Diverso da 0 imposta TCP_BUFFER_LENGTH di DCMTK',
+      },
+    ],
+  },
+  {
+    section: 'Anteprima',
+    note:
+      'I riquadri vengono costruiti sui file gia\' copiati in locale, su un thread ' +
+      'separato: non rallentano la copia e non rileggono il supporto.',
+    fields: [
+      {
+        key: 'PREVIEW_MAX_TILES',
+        label: 'Riquadri del mosaico',
+        type: 'int',
+        min: 0,
+        max: 24,
+        hint: '0 disattiva l\'anteprima. Uno per serie/orientamento',
+      },
+      {
+        key: 'PREVIEW_MAX_SCAN',
+        label: 'Intestazioni esaminate al massimo',
+        type: 'int',
+        min: 200,
+        max: 50000,
       },
     ],
   },
@@ -153,6 +187,9 @@ const DEFAULTS = {
   SEND_RETRIES: 3,
   RETRY_BACKOFF_S: 10,
   STALL_WARN_S: 45,
+  SEND_STALL_KILL_S: 180,
+  PREVIEW_MAX_TILES: 12,
+  PREVIEW_MAX_SCAN: 6000,
   FILE_COPY_TIMEOUT_S: 15,
   TCP_BUFFER_KB: 0,
   COPY_CONCURRENCY_FAST: 8,
@@ -248,6 +285,9 @@ function apply() {
   config.RETRY_BACKOFF_MS = [b, b * 3, b * 6];
 
   config.STALL_WARN_MS = current.STALL_WARN_S * 1000;
+  config.SEND_STALL_KILL_MS = current.SEND_STALL_KILL_S * 1000;
+  config.PREVIEW_MAX_TILES = current.PREVIEW_MAX_TILES;
+  config.PREVIEW_MAX_SCAN = current.PREVIEW_MAX_SCAN;
   config.FILE_COPY_TIMEOUT_MS = current.FILE_COPY_TIMEOUT_S * 1000;
 
   config.TCP_BUFFER_BYTES = current.TCP_BUFFER_KB * 1024;

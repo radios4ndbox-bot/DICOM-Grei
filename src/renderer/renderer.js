@@ -234,6 +234,201 @@ window.api.onPacsChanged((p) => {
   $('pacs-badge').textContent = `${p.aet} @ ${p.host}:${p.port}`;
 });
 
+// ---------------------------------------------------------------- anteprima
+
+/**
+ * Mosaico a destra: un riquadro per serie/orientamento.
+ *
+ * I riquadri arrivano dal main mentre la copia in locale sta ancora andando,
+ * uno alla volta e gia' ridotti a miniatura. Qui non si legge nessun file e non
+ * si decodifica nulla di pesante: si dipinge su canvas quello che arriva.
+ */
+const preview = {
+  tiles: new Map(), // id -> { tile, el, canvas }
+  zoomId: null,
+  bright: 1,
+  contrast: 1,
+  dragging: false,
+  x0: 0,
+  y0: 0,
+};
+
+function previewReset() {
+  preview.tiles.clear();
+  $('viewer-grid').textContent = '';
+  $('viewer-meta').textContent = '';
+  $('viewer-empty').classList.remove('hidden');
+  closeZoom();
+}
+
+function previewCount() {
+  const n = preview.tiles.size;
+  $('viewer-meta').textContent = n ? `${n} serie` : '';
+  $('viewer-empty').classList.toggle('hidden', n > 0);
+}
+
+/** Dipinge i pixel del riquadro su un canvas alla loro risoluzione naturale. */
+function paintTile(canvas, tile) {
+  const cx = canvas.getContext('2d');
+
+  if (tile.jpeg) {
+    // JPEG baseline: lo decodifica il motore del browser, senza dipendenze
+    const blob = new Blob([tile.jpeg], { type: 'image/jpeg' });
+    createImageBitmap(blob)
+      .then((bmp) => {
+        canvas.width = bmp.width;
+        canvas.height = bmp.height;
+        canvas.getContext('2d').drawImage(bmp, 0, 0);
+        bmp.close();
+        canvas.classList.add('ready');
+      })
+      .catch(() => {
+        canvas.classList.remove('ready');
+      });
+    return;
+  }
+
+  if (!tile.cols || !tile.rows || (!tile.gray && !tile.rgb)) return;
+
+  canvas.width = tile.cols;
+  canvas.height = tile.rows;
+  const img = cx.createImageData(tile.cols, tile.rows);
+  const d = img.data;
+
+  if (tile.gray) {
+    const g = tile.gray;
+    for (let i = 0, j = 0; i < g.length; i++, j += 4) {
+      d[j] = d[j + 1] = d[j + 2] = g[i];
+      d[j + 3] = 255;
+    }
+  } else {
+    const src = tile.rgb;
+    for (let i = 0, j = 0; j < d.length; i += 3, j += 4) {
+      d[j] = src[i];
+      d[j + 1] = src[i + 1];
+      d[j + 2] = src[i + 2];
+      d[j + 3] = 255;
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  canvas.classList.add('ready');
+}
+
+function tileCaption(t) {
+  const head = [t.series != null ? `Serie ${t.series}` : null, t.view || null]
+    .filter(Boolean)
+    .join(' · ');
+  return head || t.modality || t.sampleFile || '—';
+}
+
+function renderTile(t) {
+  const known = preview.tiles.get(t.id);
+  const box = known ? known.box : el('figure', 'tile');
+  const canvas = known ? known.canvas : document.createElement('canvas');
+
+  if (!known) {
+    const stage = el('div', 'tile__stage');
+    stage.append(canvas);
+    box.append(stage, el('figcaption', 'tile__cap'), el('p', 'tile__note'));
+    box.addEventListener('click', () => openZoom(t.id));
+    $('viewer-grid').append(box);
+  }
+
+  // le serie arrivano nell'ordine in cui compaiono i file, non per numero:
+  // l'ordine visivo lo mette il CSS, senza ridisegnare i riquadri gia' presenti
+  box.style.order = String(t.series != null ? t.series : 900 + t.id);
+
+  box.querySelector('.tile__cap').textContent = tileCaption(t);
+  const note = box.querySelector('.tile__note');
+  const bits = [];
+  if (t.count) bits.push(`${t.count} img`);
+  if (t.fullSize) bits.push(t.fullSize);
+  if (t.description) bits.push(t.description);
+  note.textContent = t.note ? t.note : bits.join(' · ');
+  note.classList.toggle('tile__note--warn', !!t.note);
+
+  preview.tiles.set(t.id, { tile: t, box, canvas });
+  paintTile(canvas, t);
+  previewCount();
+
+  // se il riquadro ingrandito e' proprio questo, va rinfrescato anche li'
+  if (preview.zoomId === t.id) openZoom(t.id);
+}
+
+function applyZoomFilter() {
+  $('zoom-canvas').style.filter = `brightness(${preview.bright}) contrast(${preview.contrast})`;
+}
+
+function openZoom(id) {
+  const entry = preview.tiles.get(id);
+  if (!entry) return;
+  const t = entry.tile;
+  preview.zoomId = id;
+
+  const bits = [tileCaption(t)];
+  if (t.fullSize) bits.push(t.fullSize);
+  if (t.modality) bits.push(t.modality);
+  if (t.frames > 1) bits.push(`${t.frames} fotogrammi`);
+  $('zoom-caption').textContent = bits.join(' · ');
+
+  paintTile($('zoom-canvas'), t);
+  preview.bright = 1;
+  preview.contrast = 1;
+  applyZoomFilter();
+  $('viewer-zoom').hidden = false;
+}
+
+function closeZoom() {
+  preview.zoomId = null;
+  const z = $('viewer-zoom');
+  if (z) z.hidden = true;
+}
+
+(function bindZoom() {
+  const cv = $('zoom-canvas');
+  $('zoom-close').addEventListener('click', closeZoom);
+  cv.addEventListener('mousedown', (e) => {
+    preview.dragging = true;
+    preview.x0 = e.clientX;
+    preview.y0 = e.clientY;
+    e.preventDefault();
+  });
+  window.addEventListener('mouseup', () => {
+    preview.dragging = false;
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!preview.dragging) return;
+    preview.bright = Math.max(0.2, Math.min(3, preview.bright + (e.clientX - preview.x0) * 0.005));
+    preview.contrast = Math.max(0.2, Math.min(3, preview.contrast - (e.clientY - preview.y0) * 0.005));
+    preview.x0 = e.clientX;
+    preview.y0 = e.clientY;
+    applyZoomFilter();
+  });
+  cv.addEventListener('dblclick', () => {
+    preview.bright = 1;
+    preview.contrast = 1;
+    applyZoomFilter();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeZoom();
+  });
+})();
+
+window.api.onPreview((ev) => {
+  if (!ev) return;
+  if (ev.t === 'reset') previewReset();
+  else if (ev.t === 'tile' || ev.t === 'update') renderTile(ev.tile);
+  else if (ev.t === 'count') {
+    const entry = preview.tiles.get(ev.id);
+    if (entry) {
+      entry.tile.count = ev.count;
+      renderTile(entry.tile);
+    }
+  } else if (ev.t === 'error') {
+    $('viewer-meta').textContent = 'anteprima non disponibile';
+  }
+});
+
 // ---------------------------------------------------------------- STEP 1
 
 $('btn-detect').addEventListener('click', detect);
@@ -315,6 +510,10 @@ function renderStudy() {
   $('clf-type').textContent = p.type;
   $('clf-pattern').textContent = p.pattern;
   $('clf-total').textContent = p.totalFiles;
+  // i file non-immagine (visualizzatore, DICOMDIR, autorun) non vengono copiati:
+  // dirlo evita la domanda "perche' il conteggio non torna col contenuto del CD"
+  $('clf-junk-row').classList.toggle('hidden', !p.skippedJunk);
+  $('clf-junk').textContent = p.skippedJunk || 0;
   $('clf-reasoning').textContent = p.reasoning;
   const tree = $('clf-tree');
   tree.textContent = '';
@@ -378,7 +577,12 @@ $('btn-stop').addEventListener('click', async () => {
 });
 
 window.api.onProgress((d) => {
-  if (d.phase === 'copy') {
+  if (d.phase === 'extract') {
+    // estrazione dello ZIP: avviene prima della barra, si mostra nello step 1
+    $('detect-status').textContent = d.total
+      ? `Estrazione archivio: ${d.done}/${d.total} file…`
+      : 'Estrazione archivio…';
+  } else if (d.phase === 'copy') {
     setProgress(0, d.total ? (d.copied + d.skipped) / d.total : 0, {
       detail: `${d.copied}/${d.total} file${d.current ? ' · ' + d.current : ''}`,
     });
@@ -471,6 +675,15 @@ function onImportDone(result) {
     notes.push('Trasferimento interrotto: lo staging è già stato azzerato, si può ripartire da capo.');
   }
   if (s.retried) notes.push(`${s.retried} file ritentati automaticamente.`);
+  if (s.gaveUp) {
+    notes.push(
+      'Ritentativi interrotti: il PACS non rispondeva più. Verificare rete e stato ' +
+        'dell\'esame, poi rilanciare l\'importazione.'
+    );
+  }
+  if (s.stallKills) {
+    notes.push(`${s.stallKills} associazione/i abbattuta/e perché mute.`);
+  }
   if (s.failedFiles && s.failedFiles.length) {
     notes.push(`${s.failedFiles.length} file non recuperabili (formato o SOP class non accettata dal PACS).`);
   }
@@ -479,6 +692,9 @@ function onImportDone(result) {
   }
   if (result.turbo) notes.push(`Modalità turbo: ${result.workers} associazioni in parallelo.`);
   if (result.iso) notes.push('ISO montata: verrà smontata alla pulizia.');
+  if (preview.tiles.size) {
+    notes.push(`Anteprima: ${preview.tiles.size} serie riconosciute durante la copia.`);
+  }
   notes.push('Se un esame non compare subito nel PACS, attendere 2–3 min e cercare per data.');
   $('sum-note').textContent = notes.join(' ');
 
@@ -513,6 +729,7 @@ $('btn-cleanup').addEventListener('click', async () => {
 });
 
 $('btn-restart').addEventListener('click', () => {
+  previewReset();
   state.drive = state.prepared = state.plan = null;
   state.finished = false;
   $('drive-list').textContent = '';

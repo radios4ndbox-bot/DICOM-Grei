@@ -55,15 +55,151 @@ body {
 
 .workspace {
   display: grid;
-  /* colonna unica centrata: il pannello anteprima non c'è più */
-  grid-template-columns: minmax(0, 760px);
-  justify-content: center;
+  /* procedura a sinistra, mosaico dell'anteprima a destra */
+  grid-template-columns: minmax(0, 1fr) 420px;
   gap: 22px;
   padding: 8px 22px 44px;
   align-items: start;
 }
-main { padding: 0; }
+main { padding: 0; min-width: 0; }
 .step { max-width: 720px; }
+
+/* ---- anteprima a mosaico --------------------------------------------- */
+.viewer {
+  position: sticky;
+  top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 150px);
+}
+.viewer__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+.viewer__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.viewer__grid:empty { display: none; }
+.viewer__empty {
+  margin: 0;
+  padding: 26px 20px 30px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.tile {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b1417;
+  cursor: zoom-in;
+}
+.tile:hover { border-color: var(--teal); }
+.tile__stage {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0b1417;
+}
+.tile__stage canvas {
+  max-width: 100%;
+  max-height: 100%;
+  display: none;
+  image-rendering: pixelated;
+}
+.tile__stage canvas.ready { display: block; }
+.tile__cap {
+  padding: 6px 8px 0;
+  background: var(--panel);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile__note {
+  margin: 1px 0 0;
+  padding: 0 8px 7px;
+  background: var(--panel);
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--muted);
+  max-height: 28px;
+  overflow: hidden;
+}
+.tile__note--warn { color: var(--warn); }
+
+/* ---- riquadro ingrandito, dentro al pannello -------------------------- */
+.viewer__zoom {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  z-index: 2;
+}
+.viewer__zoom-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.viewer__zoom-bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer__zoom-bar .icon-btn { width: 26px; height: 26px; font-size: 13px; }
+.viewer__zoom-stage {
+  flex: 1;
+  min-height: 0;
+  background: #0b1417;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+#zoom-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+  cursor: crosshair;
+  user-select: none;
+}
+.viewer__hint {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  margin: 0;
+  font-size: 11px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 1180px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  /* relative e non static: l'ingrandimento e' position:absolute su .viewer */
+  .viewer { position: relative; top: auto; max-height: none; }
+  .viewer__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
 /* [hidden] deve vincere su qualsiasi display: dichiarato qui sotto,
    altrimenti nascondere un elemento da JS non ha effetto */
