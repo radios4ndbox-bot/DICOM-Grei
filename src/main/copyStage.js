@@ -216,6 +216,19 @@ async function stageFiles(plan, onProgress, parts = 1, opts = {}) {
 
   await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, total)) }, worker));
 
+  // Copie abbandonate per timeout: il file col nome temporaneo resta sul disco.
+  // Ora che storescu prende l'intera cartella senza filtro, un temporaneo
+  // verrebbe tentato e respinto come "Bad DICOM file": si tolgono.
+  for (const d of partDirs) {
+    let leftover = [];
+    try {
+      leftover = (await fs.promises.readdir(d)).filter((n) => n.startsWith(TMP_PREFIX));
+    } catch {}
+    for (const n of leftover) {
+      await fs.promises.rm(path.join(d, n), { force: true }).catch(() => {});
+    }
+  }
+
   // le part rimaste vuote (meno file che worker) non vanno passate a storescu
   const usedDirs = partDirs.filter((_, i) => perPart[i] > 0);
 

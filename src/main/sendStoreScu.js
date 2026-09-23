@@ -81,20 +81,26 @@ function commandLine(args) {
   return [config.STORESCU, ...args].map(quoteForCmd).join(' ');
 }
 
-function matcher(pattern) {
-  return pattern === 'MP*' ? (n) => /^MP/i.test(n) : (n) => n.toLowerCase().endsWith('.dcm');
-}
-
-// File presenti in una cartella di staging che storescu prenderebbe in carico.
-async function stagedFiles(dir, pattern) {
+/**
+ * File presenti in una cartella di staging.
+ *
+ * Sono TUTTI quelli che storescu prendera' in carico, perche' gli si passa la
+ * cartella senza filtro e in staging finisce solo cio' che va inviato (ci
+ * pensa copyStage, piu' la rimozione dei temporanei abbandonati).
+ *
+ * Prima qui si rifiltrava per pattern, e le due viste non combaciavano: con
+ * "*.dcm" il filtro nostro trovava i file mentre storescu non ne trovava
+ * nessuno. Il disallineamento faceva risultare "mai tentati" dei file che
+ * nessuno aveva mai provato a inviare, e li mandava nei ritentativi.
+ */
+async function stagedFiles(dir) {
   let names;
   try {
     names = await fs.promises.readdir(dir, { withFileTypes: true });
   } catch {
     return [];
   }
-  const match = matcher(pattern);
-  return names.filter((e) => e.isFile() && match(e.name)).map((e) => path.join(dir, e.name));
+  return names.filter((e) => e.isFile()).map((e) => path.join(dir, e.name));
 }
 
 /**
@@ -115,9 +121,26 @@ function sleep(ms, isCancelled) {
   });
 }
 
-// Invio di un'intera cartella di staging (un worker = un'associazione DICOM).
-function dirArgs(dir, pattern) {
-  return buildArgs(['+sd'], [dir, '--scan-pattern', pattern]);
+/**
+ * Invio di un'intera cartella di staging (un worker = un'associazione DICOM).
+ *
+ * NESSUN --scan-pattern, di proposito. In staging finiscono solo i file da
+ * inviare (copyStage copia soltanto quelli: nel Tipo A i soli "MP*", negli
+ * altri tutti rinominati in .dcm), quindi basta indicare la cartella.
+ *
+ * E non e' una scelta di stile: con questo storescu il pattern "*.dcm" non
+ * combacia con NESSUN file. Verificato lanciandolo come fa l'app, con spawn e
+ * array di argomenti: "MP*" e "IMG*" trovano i file, "*.dcm" restituisce
+ * "no input files to be sent". Il passaggio principale inviava quindi zero
+ * file per i Tipi B, C e D, e tutto il trasferimento finiva nei ritentativi,
+ * che passano i file elencati uno per uno: funzionava, ma per la strada piu'
+ * lenta possibile.
+ *
+ * Il vincolo di non passare mai "*" resta rispettato: qui non si passa alcun
+ * carattere jolly, e storescu percorre solo la cartella che gli indichiamo.
+ */
+function dirArgs(dir) {
+  return buildArgs(['+sd'], [dir]);
 }
 
 // Invio di file espliciti: usato solo dai ritentativi, niente scan-pattern.
@@ -245,8 +268,15 @@ function runStorescu(args, { onLog, onFile, register }) {
       m = line.match(/Received Store Response\s*\((.*)\)\s*$/i);
       if (m) {
         const status = m[1].trim();
-        // un Warning (es. coercizione di elementi) significa comunque memorizzato
-        onFile({ file: current, ok: /warning/i.test(status), status });
+        // Forma reale a -v, verificata sul log di storescu contro un PACS:
+        //   "Received Store Response (Success)"            -> memorizzato
+        //   "Received Store Response (Warning: ...)"       -> memorizzato, con avviso
+        //   "Received Store Response (Error: ...)"         -> non memorizzato
+        // Il successo HA le parentesi. Considerare solo i Warning come
+        // riusciti faceva contare ogni file memorizzato come fallito e lo
+        // rimandava: il PACS riceveva tutto due volte.
+        const ok = /^success/i.test(status) || /warning/i.test(status);
+        onFile({ file: current, ok, status });
         current = null;
         return;
       }
@@ -495,7 +525,7 @@ function sendStoreScu(opts, emit) {
   const collectUnattempted = async () => {
     let n = 0;
     for (const d of partDirs) {
-      for (const f of await stagedFiles(d, pattern)) {
+      for (const f of await stagedFiles(d)) {
         const k = norm(f);
         if (!outcomes.has(k) && !permanent.has(k) && !retryQueue.has(k)) {
           retryQueue.set(k, f);
@@ -525,7 +555,7 @@ function sendStoreScu(opts, emit) {
     // contenuto del supporto ma si invia solo ciò che combacia con "MP*",
     // quindi il totale da copiare sarebbe irraggiungibile e l'ETA mai risolta.
     let inviabili = 0;
-    for (const d of partDirs) inviabili += (await stagedFiles(d, pattern)).length;
+    for (const d of partDirs) inviabili += (await stagedFiles(d)).length;
     if (inviabili === 0) {
       // meglio dirlo subito che lasciar girare storescu a vuoto e chiudere con
       // "0 inviati" senza spiegazione
@@ -546,7 +576,7 @@ function sendStoreScu(opts, emit) {
     emitProgress();
 
     // ---- passaggio principale: un worker per sottocartella
-    await runParallel(partDirs.map((d) => dirArgs(d, pattern)));
+    await runParallel(partDirs.map((d) => dirArgs(d)));
 
     // Se storescu è morto a metà (timeout DIMSE perché il PACS non rispondeva
     // più, o guardia di inattività) i file successivi non hanno prodotto NESSUNA
