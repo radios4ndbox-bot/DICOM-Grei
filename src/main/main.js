@@ -338,7 +338,13 @@ ipcMain.handle('run-import', async (_e, opts) => {
     // Chiusura dell'anteprima SENZA attenderla: il riordino degli ultimi
     // riquadri può finire mentre l'invio è già partito. Aspettarlo qui avrebbe
     // aggiunto secondi morti fra copia e invio.
-    if (preview) preview.end().catch(() => {});
+    // L'anteprima si ferma qui, prima dell'invio: legge l'intestazione di ogni
+    // file dello staging, cioè dalla stessa cartella e dallo stesso disco da
+    // cui storescu sta per leggere, e ogni apertura passa per l'antivirus.
+    // Misurato: 3000 intestazioni lette anche con soli 3 riquadri prodotti.
+    // I riquadri già comparsi durante la copia restano visibili; si smette
+    // soltanto di aggiungerne, perché l'invio ha la priorità.
+    if (preview) preview.kill();
 
     if (copy.copied === 0) {
       return { copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' };
