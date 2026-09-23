@@ -1,6 +1,6 @@
 'use strict';
 
-const { execFile } = require('child_process');
+const { execFileP, powershell, WMIC } = require('./winExec');
 
 const DRIVE_TYPE = {
   2: 'USB',       // supporto rimovibile / chiavetta
@@ -8,15 +8,6 @@ const DRIVE_TYPE = {
   4: 'NETWORK',
   5: 'OPTICAL',   // CD/DVD o ISO montata
 };
-
-function run(cmd, args) {
-  return new Promise((resolve, reject) => {
-    execFile(cmd, args, { windowsHide: true, timeout: 20000 }, (err, stdout, stderr) => {
-      if (err) return reject(err);
-      resolve(String(stdout || ''));
-    });
-  });
-}
 
 function parseWmic(stdout) {
   const out = [];
@@ -60,7 +51,7 @@ async function detectMedia() {
   let drives = [];
 
   try {
-    const stdout = await run('wmic', ['logicaldisk', 'get', 'caption,drivetype,volumename']);
+    const stdout = await execFileP(WMIC, ['logicaldisk', 'get', 'caption,drivetype,volumename']);
     drives = parseWmic(stdout);
   } catch {
     drives = [];
@@ -68,8 +59,10 @@ async function detectMedia() {
 
   if (drives.length === 0) {
     // wmic assente (Windows 11 recenti) -> fallback CIM
-    const ps = 'Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,DriveType,VolumeName | ConvertTo-Json -Compress';
-    const stdout = await run('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps]);
+    const stdout = await powershell(
+      'Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,DriveType,VolumeName | ConvertTo-Json -Compress',
+      { timeout: 30000 }
+    );
     drives = parseCim(stdout);
   }
 

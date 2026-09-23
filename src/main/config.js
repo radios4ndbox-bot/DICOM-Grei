@@ -47,6 +47,25 @@ module.exports = {
   // Timeout lettura per singolo file (DVD danneggiati)
   FILE_COPY_TIMEOUT_MS: 15000,
 
+  // ---- Riga di comando di storescu -------------------------------------
+  // Sintassi di trasferimento proposte: 'lossless' | 'uncompr' | 'little' | 'implicit'.
+  //
+  // Il default resta 'lossless' e NON significa "comprimi": questa build di
+  // storescu non ha codec JPEG linkati, quindi non ricomprime mai nulla e i
+  // byte partono come stanno sul supporto. Serve a proporre anche il contesto
+  // JPEG lossless, di cui hanno bisogno i file che sul CD sono GIA' compressi
+  // cosi' (gran parte di TC e RM). Con 'uncompr' quei file uscirebbero come
+  // "No presentation context for:".
+  PROPOSE_TS: 'lossless',
+
+  // Passare i timeout a storescu. Toglierli riproduce un lancio a mano da cmd,
+  // dove DCMTK aspetta il PACS senza limiti.
+  SEND_TIMEOUTS: true,
+
+  // TCP_NODELAY=1 nell'ambiente di storescu: disattiva Nagle. Un lancio da cmd
+  // non la imposta, quindi va tolta se si vuole il confronto fedele.
+  TCP_NODELAY_ON: true,
+
   // ---- Trasferimento verso il PACS -------------------------------------
   // Una singola associazione invia i file in sequenza e aspetta la risposta
   // di ogni C-STORE: il collo di bottiglia è il round-trip, non la CPU.
@@ -73,6 +92,12 @@ module.exports = {
   // Nessuna risposta dal PACS per questo tempo => avviso all'operatore
   STALL_WARN_MS: 45000,
 
+  // Nessun byte da storescu per questo tempo => il processo viene abbattuto e i
+  // file non tentati rientrano nel ciclo di ritentativi. E' la rete di sicurezza
+  // per i casi in cui DCMTK non fa scattare i propri timeout e l'invio resta
+  // appeso con la barra ferma.
+  SEND_STALL_KILL_MS: 180000,
+
   // ---- Prestazioni --------------------------------------------------------
   // Copie contemporanee durante lo staging (vedi copyStage). Da lettore ottico
   // restano basse: letture parallele su un solo disco fanno saltare la testina.
@@ -85,6 +110,17 @@ module.exports = {
 
   // Prefisso delle sottocartelle di staging usate dai worker paralleli
   PART_PREFIX: 'part_',
+
+  // ---- Anteprima ---------------------------------------------------------
+  // Riquadri del mosaico: uno per serie/orientamento (assiale, coronale,
+  // sagittale in TC; una proiezione per riquadro in RX).
+  PREVIEW_MAX_TILES: 12,
+  // Intestazioni lette al massimo, fra i file gia' copiati in locale.
+  PREVIEW_MAX_SCAN: 6000,
+  // Lato massimo della miniatura, in pixel.
+  PREVIEW_THUMB_PX: 256,
+  // Guardia anti-OOM: Rows/Columns arrivano da un supporto non fidato.
+  PREVIEW_MAX_PIXELS: 64 * 1024 * 1024,
 
   // ---- Conservazione giornaliera ---------------------------------------
   // Le copie in staging restano disponibili per la giornata e vengono

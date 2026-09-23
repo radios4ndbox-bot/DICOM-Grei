@@ -99,6 +99,17 @@ const SCHEMA = [
         unit: 's',
       },
       {
+        key: 'SEND_STALL_KILL_S',
+        label: 'Abbatti associazione muta dopo',
+        type: 'int',
+        min: 30,
+        max: 3600,
+        unit: 's',
+        hint:
+          'Se da storescu non arriva un byte per questo tempo il processo viene ucciso ' +
+          'e i file non inviati rientrano nei ritentativi. Evita gli invii appesi per sempre',
+      },
+      {
         key: 'TCP_BUFFER_KB',
         label: 'Buffer TCP verso il PACS',
         type: 'int',
@@ -106,6 +117,67 @@ const SCHEMA = [
         max: 16384,
         unit: 'KB',
         hint: '0 = automatico di Windows (consigliato). Diverso da 0 imposta TCP_BUFFER_LENGTH di DCMTK',
+      },
+    ],
+  },
+  {
+    section: 'Riga di comando di storescu',
+    note:
+      'Da usare per allineare l\'app a un lancio manuale da cmd che si comporta ' +
+      'diversamente: con gli stessi valori, l\'app lancia esattamente gli stessi ' +
+      'argomenti. Il pulsante «Copia comando» nello step 3 da\' la riga da incollare.',
+    fields: [
+      {
+        key: 'PROPOSE_TS',
+        label: 'Sintassi di trasferimento proposte',
+        type: 'enum',
+        options: [
+          { value: 'lossless', label: 'Predefinite + JPEG lossless (--propose-lossless)' },
+          { value: 'uncompr', label: 'Solo non compresse (--propose-uncompr)' },
+          { value: 'little', label: 'Explicit VR little endian (--propose-little)' },
+          { value: 'implicit', label: 'Implicit VR little endian (--propose-implicit)' },
+        ],
+        hint:
+          'Non c\'entra con la qualita\': questo storescu non ha codec JPEG, non ricomprime ' +
+          'mai nulla e i byte partono come stanno sul supporto. --propose-lossless serve ai ' +
+          'file gia\' compressi cosi\' sul CD, che altrimenti non trovano un contesto',
+      },
+      {
+        key: 'SEND_TIMEOUTS',
+        label: 'Passa i timeout a storescu',
+        type: 'bool',
+        hint:
+          'Disattivandolo DCMTK aspetta il PACS senza limiti, come da cmd. ' +
+          'La guardia di inattivita\' dell\'app resta comunque attiva',
+      },
+      {
+        key: 'TCP_NODELAY_ON',
+        label: 'TCP_NODELAY (disattiva Nagle)',
+        type: 'bool',
+        hint: 'Un lancio da cmd non la imposta: toglierla per un confronto fedele',
+      },
+    ],
+  },
+  {
+    section: 'Anteprima',
+    note:
+      'I riquadri vengono costruiti sui file gia\' copiati in locale, su un thread ' +
+      'separato: non rallentano la copia e non rileggono il supporto.',
+    fields: [
+      {
+        key: 'PREVIEW_MAX_TILES',
+        label: 'Riquadri del mosaico',
+        type: 'int',
+        min: 0,
+        max: 24,
+        hint: '0 disattiva l\'anteprima. Uno per serie/orientamento',
+      },
+      {
+        key: 'PREVIEW_MAX_SCAN',
+        label: 'Intestazioni esaminate al massimo',
+        type: 'int',
+        min: 200,
+        max: 50000,
       },
     ],
   },
@@ -153,6 +225,12 @@ const DEFAULTS = {
   SEND_RETRIES: 3,
   RETRY_BACKOFF_S: 10,
   STALL_WARN_S: 45,
+  PROPOSE_TS: 'lossless',
+  SEND_TIMEOUTS: true,
+  TCP_NODELAY_ON: true,
+  SEND_STALL_KILL_S: 180,
+  PREVIEW_MAX_TILES: 12,
+  PREVIEW_MAX_SCAN: 6000,
   FILE_COPY_TIMEOUT_S: 15,
   TCP_BUFFER_KB: 0,
   COPY_CONCURRENCY_FAST: 8,
@@ -200,6 +278,16 @@ function validate(input, base) {
       const v = validAet(raw);
       if (v === null) errors.push(`${f.label}: max 16 caratteri, solo lettere, cifre, . _ -`);
       else out[key] = v;
+    } else if (f.type === 'enum') {
+      const v = String(raw).trim();
+      if (!f.options.some((o) => o.value === v)) errors.push(`${f.label}: valore non previsto.`);
+      else out[key] = v;
+    } else if (f.type === 'bool') {
+      // dalla finestra arriva una checkbox, dal file salvato un booleano vero
+      const v = String(raw).trim().toLowerCase();
+      if (['true', '1', 'on', 'si', 'sì'].includes(v)) out[key] = true;
+      else if (['false', '0', 'off', 'no', ''].includes(v)) out[key] = false;
+      else errors.push(`${f.label}: deve essere acceso o spento.`);
     } else {
       const n = Number(raw);
       if (!Number.isFinite(n) || !Number.isInteger(n)) {
@@ -247,7 +335,14 @@ function apply() {
   const b = current.RETRY_BACKOFF_S * 1000;
   config.RETRY_BACKOFF_MS = [b, b * 3, b * 6];
 
+  config.PROPOSE_TS = current.PROPOSE_TS;
+  config.SEND_TIMEOUTS = current.SEND_TIMEOUTS;
+  config.TCP_NODELAY_ON = current.TCP_NODELAY_ON;
+
   config.STALL_WARN_MS = current.STALL_WARN_S * 1000;
+  config.SEND_STALL_KILL_MS = current.SEND_STALL_KILL_S * 1000;
+  config.PREVIEW_MAX_TILES = current.PREVIEW_MAX_TILES;
+  config.PREVIEW_MAX_SCAN = current.PREVIEW_MAX_SCAN;
   config.FILE_COPY_TIMEOUT_MS = current.FILE_COPY_TIMEOUT_S * 1000;
 
   config.TCP_BUFFER_BYTES = current.TCP_BUFFER_KB * 1024;

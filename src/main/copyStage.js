@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const config = require('./config');
+const { isMpName } = require('./classify');
 
 // Nome dei file durante la copia: prefisso e suffisso non combaciano né con
 // "MP*" né con "*.dcm", quindi storescu non può mai prendere un file a metà.
@@ -12,9 +13,9 @@ const TMP_SUFFIX = '.part';
 
 function walkFiles(dir) {
   const out = [];
-  const stack = [dir];
+  const stack = [[dir, '', 0]];
   while (stack.length) {
-    const cur = stack.pop();
+    const [cur, sub, depth] = stack.pop();
     let entries;
     try {
       entries = fs.readdirSync(cur, { withFileTypes: true });
@@ -23,8 +24,8 @@ function walkFiles(dir) {
     }
     for (const e of entries) {
       const p = path.join(cur, e.name);
-      if (e.isDirectory()) stack.push(p);
-      else if (e.isFile()) out.push(p);
+      if (e.isDirectory()) stack.push([p, depth === 0 ? e.name : sub, depth + 1]);
+      else if (e.isFile()) out.push({ p, sub });
     }
   }
   return out;
@@ -46,19 +47,27 @@ async function emptyStagingDir() {
 async function copyWithTimeout(src, dest, ms) {
   const tmp = path.join(path.dirname(dest), TMP_PREFIX + path.basename(dest) + TMP_SUFFIX);
   let timer;
+  let timedOut = false;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error('timeout')), ms);
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error('timeout'));
+    }, ms);
   });
+
+  const copying = fs.promises.copyFile(src, tmp);
   try {
-    await Promise.race([fs.promises.copyFile(src, tmp), timeout]);
+    await Promise.race([copying, timeout]);
   } catch (err) {
-    // una lettura bloccata su un settore illeggibile non si può annullare da
-    // Node: si abbandona e si prova a togliere il temporaneo
-    fs.promises.rm(tmp, { force: true }).catch(() => {});
-    throw err;
+    // Una lettura bloccata su un settore illeggibile non si può annullare da
+    // Node: si abbandona. Il temporaneo va tolto DOPO che la copia sottostante
+    // ha finito, altrimenti CopyFileW lo ricrea subito dopo il rm e resta lì.
+    copying.catch(() => {}).then(() => fs.promises.rm(tmp, { force: true }).catch(() => {}));
+    throw timedOut ? new Error('timeout di lettura') : err;
   } finally {
     clearTimeout(timer);
   }
+
   try {
     await fs.promises.rename(tmp, dest);
   } catch (err) {
@@ -101,6 +110,39 @@ function planDestinations(jobs, partDirs, strategy) {
 }
 
 /**
+ * Dall'elenco dei file del supporto agli incarichi di copia.
+ *
+ * Con la strategia 'keep' il file mantiene il suo nome, quindi verrà inviato
+ * solo se combacia con lo scan-pattern: copiare gli altri è tempo di lettura
+ * ottica buttato (su molti CD il visualizzatore da solo pesa più delle
+ * immagini). Con 'rename'/'suffix' ogni file diventa .dcm e va sempre copiato.
+ *
+ * L'indice del suffisso viene dalla cartella di primo livello di ciascun file,
+ * non da plan.subfolders: così anche forzando il Tipo C su un supporto
+ * classificato diversamente i suffissi restano coerenti.
+ */
+function buildJobs(files, plan) {
+  const keepOnlyMp = plan.strategy === 'keep' && plan.pattern === 'MP*';
+  const subIndex = new Map();
+  const jobs = [];
+  let notSendable = 0;
+
+  for (const f of files) {
+    if (keepOnlyMp && !isMpName(path.basename(f.p))) {
+      notSendable++;
+      continue;
+    }
+    let idx = subIndex.get(f.sub);
+    if (idx === undefined) {
+      idx = subIndex.size;
+      subIndex.set(f.sub, idx);
+    }
+    jobs.push({ src: f.p, suffixIndex: idx });
+  }
+  return { jobs, notSendable };
+}
+
+/**
  * Copia i file dalla sorgente classificata in C:\tmp\dicom_import.
  *
  * Con `parts > 1` i file vengono distribuiti a rotazione in sottocartelle
@@ -112,25 +154,20 @@ function planDestinations(jobs, partDirs, strategy) {
  * @param {object} plan  risultato di classify()
  * @param {(p:object)=>void} onProgress  riceve { phase:'copy', copied, total, skipped, current }
  * @param {number} parts  numero di sottocartelle (worker) da preparare
- * @param {{concurrency?:number, isCancelled?:()=>boolean}} opts
- * @returns {Promise<{ copied, skipped, total, skippedFiles, partDirs, cancelled }>}
+ * @param {{concurrency?:number, isCancelled?:()=>boolean, files?:object[], onStaged?:(dest:string)=>void}} opts
+ * @returns {Promise<{copied,skipped,total,notSendable,skippedFiles,partDirs,cancelled}>}
  */
 async function stageFiles(plan, onProgress, parts = 1, opts = {}) {
   const concurrency = Math.max(1, (opts.concurrency | 0) || 1);
   const isCancelled = typeof opts.isCancelled === 'function' ? opts.isCancelled : () => false;
+  const onStaged = typeof opts.onStaged === 'function' ? opts.onStaged : null;
 
   await emptyStagingDir();
 
-  const jobs = [];
-  if (plan.strategy === 'suffix') {
-    plan.subfolders.forEach((sub, idx) => {
-      for (const f of walkFiles(path.join(plan.dataRoot, sub))) {
-        jobs.push({ src: f, suffixIndex: idx });
-      }
-    });
-  } else {
-    for (const f of walkFiles(plan.dataRoot)) jobs.push({ src: f, suffixIndex: 0 });
-  }
+  // L'elenco arriva dalla classificazione: l'albero del supporto è già stato
+  // percorso una volta, non lo si ripercorre.
+  const files = Array.isArray(opts.files) && opts.files.length ? opts.files : walkFiles(plan.dataRoot);
+  const { jobs, notSendable } = buildJobs(files, plan);
 
   const total = jobs.length;
   const nParts = Math.max(1, Math.min((parts | 0) || 1, total || 1));
@@ -165,9 +202,11 @@ async function stageFiles(plan, onProgress, parts = 1, opts = {}) {
         await copyWithTimeout(job.src, job.dest, config.FILE_COPY_TIMEOUT_MS);
         copied++;
         perPart[job.part]++;
+        // l'anteprima legge il file appena scritto in locale, non il supporto
+        if (onStaged) onStaged(job.dest);
       } catch {
         skipped++;
-        skippedFiles.push(job.src);
+        if (skippedFiles.length < 500) skippedFiles.push(job.src);
       }
       if (onProgress) {
         onProgress({ phase: 'copy', copied, skipped, total, current: path.basename(job.src) });
@@ -175,12 +214,12 @@ async function stageFiles(plan, onProgress, parts = 1, opts = {}) {
     }
   };
 
-  await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, jobs.length)) }, worker));
+  await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, total)) }, worker));
 
   // le part rimaste vuote (meno file che worker) non vanno passate a storescu
   const usedDirs = partDirs.filter((_, i) => perPart[i] > 0);
 
-  return { copied, skipped, total, skippedFiles, partDirs: usedDirs, cancelled };
+  return { copied, skipped, total, notSendable, skippedFiles, partDirs: usedDirs, cancelled };
 }
 
-module.exports = { stageFiles, emptyStagingDir };
+module.exports = { stageFiles, emptyStagingDir, buildJobs };

@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const dicomParser = require('dicom-parser');
 
+const { isJunk } = require('./classify');
+
 const MODALITY = {
   CT: 'TC — Tomografia Computerizzata',
   MR: 'RM — Risonanza Magnetica',
@@ -34,7 +36,7 @@ function firstFiles(dir, limit) {
     for (const e of entries) {
       const p = path.join(cur, e.name);
       if (e.isDirectory()) stack.push(p);
-      else if (e.isFile() && !/^dicomdir$/i.test(e.name)) {
+      else if (e.isFile() && !isJunk(e.name)) {
         out.push(p);
         if (out.length >= limit) break;
       }
@@ -110,14 +112,38 @@ function parseOne(file) {
 
 /**
  * Legge i dati anagrafici e di studio dal primo file DICOM leggibile.
+ *
+ * Il supporto è già stato percorso dalla classificazione: se l'elenco dei file
+ * viene passato, non si rilegge nessuna cartella. Bastano pochi tentativi —
+ * l'anagrafica è identica in tutte le immagini dello stesso studio.
+ *
+ * @param {string} dataRoot
+ * @param {object} plan
+ * @param {{p:string,sub:string}[]} [files] elenco già filtrato dalla scansione
  * @returns {object|null}
  */
-function readStudyInfo(dataRoot, plan) {
+function readStudyInfo(dataRoot, plan, files) {
   const candidates = [];
-  if (plan && plan.strategy === 'suffix' && Array.isArray(plan.subfolders) && plan.subfolders.length) {
-    candidates.push(...firstFiles(path.join(dataRoot, plan.subfolders[0]), 6));
+
+  if (Array.isArray(files) && files.length) {
+    if (plan && plan.strategy === 'suffix') {
+      // con più sottocartelle si parte da quella che la copia userà per prima
+      const first = plan.subfolders && plan.subfolders[0];
+      for (const f of files) {
+        if (candidates.length >= 6) break;
+        if (f.sub === first) candidates.push(f.p);
+      }
+    }
+    for (const f of files) {
+      if (candidates.length >= 15) break;
+      candidates.push(f.p);
+    }
+  } else {
+    if (plan && plan.strategy === 'suffix' && Array.isArray(plan.subfolders) && plan.subfolders.length) {
+      candidates.push(...firstFiles(path.join(dataRoot, plan.subfolders[0]), 6));
+    }
+    candidates.push(...firstFiles(dataRoot, 15));
   }
-  candidates.push(...firstFiles(dataRoot, 15));
 
   for (const f of candidates) {
     try {

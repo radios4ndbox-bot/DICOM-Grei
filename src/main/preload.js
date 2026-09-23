@@ -14,7 +14,10 @@ contextBridge.exposeInMainWorld('api', {
   // Il main tiene lo stato autorevole (sorgente preparata, piano di
   // classificazione). Qui passano solo scelte dell'utente, mai percorsi.
   classify: () => ipcRenderer.invoke('classify'),
-  runImport: (type, turbo) => ipcRenderer.invoke('run-import', { type: type || '', turbo: !!turbo }),
+  // mode: 'single' (una sola associazione, come da cmd) | 'normal' | 'turbo'
+  runImport: (type, mode) => ipcRenderer.invoke('run-import', { type: type || '', mode: mode || 'normal' }),
+  // riga di comando dell'ultimo invio, negli appunti: serve a rilanciarla identica da cmd
+  copyCommand: () => ipcRenderer.invoke('copy-command'),
   stopImport: () => ipcRenderer.invoke('stop-import'),
   cleanup: () => ipcRenderer.invoke('cleanup'),
 
@@ -25,4 +28,6 @@ contextBridge.exposeInMainWorld('api', {
   onProgress: (cb) => subscribe('progress', cb),
   onLog: (cb) => subscribe('log', cb),
   onPacsChanged: (cb) => subscribe('pacs-changed', cb),
+  // riquadri dell'anteprima: arrivano dal main mentre la copia è in corso
+  onPreview: (cb) => subscribe('preview', cb),
 });

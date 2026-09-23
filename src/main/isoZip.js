@@ -1,36 +1,12 @@
 'use strict';
 
-const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 const config = require('./config');
+const { powershell } = require('./winExec');
 const { detectMedia } = require('./detectMedia');
-
-/**
- * Esegue uno script PowerShell fisso. I percorsi NON vengono mai interpolati
- * nel comando: passano come variabili d'ambiente e lo script le legge con
- * $env:NOME. Così un file chiamato p.es. `evil$(calc).iso` su una chiavetta
- * non può iniettare comandi (le stringhe "..." di PowerShell espandono $() e `).
- */
-function ps(command, { env = {}, timeout = 120000 } = {}) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'powershell',
-      ['-NoProfile', '-NonInteractive', '-Command', command],
-      {
-        windowsHide: true,
-        timeout,
-        maxBuffer: 1024 * 1024 * 16,
-        env: { ...process.env, ...env },
-      },
-      (err, stdout, stderr) => {
-        if (err) return reject(new Error((stderr || err.message || '').trim()));
-        resolve(String(stdout || ''));
-      }
-    );
-  });
-}
+const { extractZip } = require('./unzip');
 
 function firstFileWithExt(dir, ext) {
   try {
@@ -65,18 +41,21 @@ function findBucketDir(root, maxDepth = 5) {
 
 async function mountIso(isoPath) {
   const before = new Set((await detectMedia()).map((d) => d.caption));
-  await ps('Mount-DiskImage -ImagePath $env:DIT_ISO -ErrorAction Stop | Out-Null', {
+  await powershell('Mount-DiskImage -ImagePath $env:DIT_ISO -ErrorAction Stop | Out-Null', {
     env: { DIT_ISO: isoPath },
   });
 
-  // Attendi che compaia la nuova lettera ottica (drivetype 5).
+  // Attendi che compaia la nuova lettera ottica (drivetype 5). Su postazioni
+  // lente il volume può metterci qualche secondo a essere pronto.
   let added = [];
-  for (let i = 0; i < 20 && added.length === 0; i++) {
+  for (let i = 0; i < 40 && added.length === 0; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const now = await detectMedia();
     added = now.filter((d) => d.driveType === 5 && !before.has(d.caption));
   }
   if (added.length === 0) {
+    // niente unità nuova: non si lascia l'immagine montata a metà
+    await dismountIso(isoPath);
     throw new Error('ISO montata ma nessuna nuova unità ottica rilevata.');
   }
   return added[0].caption + '\\';
@@ -84,7 +63,7 @@ async function mountIso(isoPath) {
 
 async function dismountIso(isoPath) {
   try {
-    await ps('Dismount-DiskImage -ImagePath $env:DIT_ISO -ErrorAction Stop | Out-Null', {
+    await powershell('Dismount-DiskImage -ImagePath $env:DIT_ISO -ErrorAction Stop | Out-Null', {
       env: { DIT_ISO: isoPath },
     });
     return true;
@@ -94,57 +73,15 @@ async function dismountIso(isoPath) {
 }
 
 /**
- * Difesa "zip slip": prima di estrarre, elenca i nomi delle voci e verifica
- * che nessuna esca dalla cartella di destinazione (`..\..\`, percorsi assoluti,
- * lettere di unità). Un archivio su un CD paziente non è fidato.
- */
-async function assertZipEntriesSafe(zipPath, target) {
-  const out = await ps(
-    'Add-Type -AssemblyName System.IO.Compression.FileSystem;' +
-      '$z=[System.IO.Compression.ZipFile]::OpenRead($env:DIT_ZIP);' +
-      'try{$z.Entries|ForEach-Object{$_.FullName}}finally{$z.Dispose()}',
-    { env: { DIT_ZIP: zipPath }, timeout: 60000 }
-  );
-
-  const base = path.resolve(target);
-  const bad = [];
-  for (const raw of out.split(/\r?\n/)) {
-    const name = raw.trim();
-    if (!name) continue;
-    if (path.isAbsolute(name) || /^[a-z]:/i.test(name) || name.startsWith('\\\\')) {
-      bad.push(name);
-      continue;
-    }
-    const dest = path.resolve(base, name.replace(/\//g, '\\'));
-    if (dest !== base && !dest.startsWith(base + path.sep)) bad.push(name);
-  }
-
-  if (bad.length) {
-    throw new Error(
-      `Archivio ZIP non sicuro: ${bad.length} voce/i puntano fuori dalla cartella di estrazione ` +
-        `(es. "${bad[0]}"). Estrazione annullata.`
-    );
-  }
-}
-
-async function extractZip(zipPath) {
-  // Fuori da STAGING_DIR: lo staging viene svuotato a ogni import.
-  const target = config.EXTRACT_DIR;
-  await assertZipEntriesSafe(zipPath, target);
-  await fs.promises.rm(target, { recursive: true, force: true });
-  await fs.promises.mkdir(target, { recursive: true });
-  await ps(
-    'Expand-Archive -LiteralPath $env:DIT_ZIP -DestinationPath $env:DIT_DEST -Force -ErrorAction Stop',
-    { env: { DIT_ZIP: zipPath, DIT_DEST: target } }
-  );
-  return findBucketDir(target);
-}
-
-/**
  * Prepara la sorgente: risolve ISO (Tipo E) e ZIP (Tipo F), altrimenti passa attraverso.
+ *
+ * L'estrazione dello ZIP non passa più da `Expand-Archive`: vedi unzip.js.
+ * La difesa "zip slip" è dentro al lettore e fa fallire l'archivio prima che
+ * venga scritto qualsiasi file.
+ *
  * @returns {{ kind:'optical'|'usb'|'folder', sourcePath:string, iso:string|null, note:string }}
  */
-async function prepareSource(drive) {
+async function prepareSource(drive, opts = {}) {
   const root = drive.caption.endsWith('\\') ? drive.caption : drive.caption + '\\';
 
   const iso = firstFileWithExt(root, '.iso');
@@ -155,8 +92,18 @@ async function prepareSource(drive) {
 
   const zip = firstFileWithExt(root, '.zip');
   if (zip) {
-    const extractedParent = await extractZip(zip);
-    return { kind: 'folder', sourcePath: extractedParent, iso: null, note: `ZIP estratto in ${extractedParent}` };
+    // Fuori da STAGING_DIR: lo staging viene svuotato a ogni import.
+    const r = await extractZip(zip, config.EXTRACT_DIR, {
+      onProgress: opts.onProgress,
+      isCancelled: opts.isCancelled,
+    });
+    const parent = findBucketDir(config.EXTRACT_DIR);
+    return {
+      kind: 'folder',
+      sourcePath: parent,
+      iso: null,
+      note: `ZIP estratto (${r.files} file) in ${parent}`,
+    };
   }
 
   return {
@@ -167,4 +114,4 @@ async function prepareSource(drive) {
   };
 }
 
-module.exports = { prepareSource, dismountIso, assertZipEntriesSafe };
+module.exports = { prepareSource, dismountIso, mountIso };

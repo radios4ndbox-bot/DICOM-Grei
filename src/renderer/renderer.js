@@ -124,19 +124,35 @@ function buildSettingsForm(desc) {
       row.append(lab);
 
       const box = el('div', 'set__input');
-      const inp = document.createElement('input');
+      let inp;
+      if (f.type === 'enum') {
+        inp = document.createElement('select');
+        for (const o of f.options) {
+          const opt = el('option', null, o.label);
+          opt.value = o.value;
+          inp.append(opt);
+        }
+        inp.value = String(desc.values[f.key]);
+      } else if (f.type === 'bool') {
+        inp = document.createElement('input');
+        inp.type = 'checkbox';
+        inp.checked = desc.values[f.key] === true || desc.values[f.key] === 'true';
+      } else {
+        inp = document.createElement('input');
+        if (f.type === 'int') {
+          inp.type = 'number';
+          inp.min = String(f.min);
+          inp.max = String(f.max);
+          inp.step = '1';
+        } else {
+          inp.type = 'text';
+          inp.maxLength = f.type === 'aet' ? 16 : 253;
+        }
+        inp.value = String(desc.values[f.key]);
+      }
       inp.id = 'set-' + f.key;
       inp.dataset.key = f.key;
-      if (f.type === 'int') {
-        inp.type = 'number';
-        inp.min = String(f.min);
-        inp.max = String(f.max);
-        inp.step = '1';
-      } else {
-        inp.type = 'text';
-        inp.maxLength = f.type === 'aet' ? 16 : 253;
-      }
-      inp.value = String(desc.values[f.key]);
+      inp.dataset.type = f.type;
       box.append(inp);
       if (f.unit) box.append(el('span', 'set__unit', f.unit));
       row.append(box);
@@ -144,7 +160,8 @@ function buildSettingsForm(desc) {
       const bits = [];
       if (f.hint) bits.push(f.hint);
       if (f.type === 'int') bits.push(`${f.min}–${f.max}`);
-      bits.push(`predefinito ${desc.defaults[f.key]}`);
+      const def = desc.defaults[f.key];
+      bits.push(`predefinito ${def === true ? 'acceso' : def === false ? 'spento' : def}`);
       row.append(el('span', 'set__hint', bits.join(' · ')));
 
       wrap.append(row);
@@ -158,8 +175,9 @@ function buildSettingsForm(desc) {
 
 function collectSettings() {
   const out = {};
-  for (const inp of $('set-body').querySelectorAll('input[data-key]')) {
-    out[inp.dataset.key] = inp.value.trim();
+  for (const inp of $('set-body').querySelectorAll('[data-key]')) {
+    if (inp.dataset.type === 'bool') out[inp.dataset.key] = inp.checked ? 'true' : 'false';
+    else out[inp.dataset.key] = inp.value.trim();
   }
   return out;
 }
@@ -232,6 +250,201 @@ $('set-reset').addEventListener('click', async () => {
 
 window.api.onPacsChanged((p) => {
   $('pacs-badge').textContent = `${p.aet} @ ${p.host}:${p.port}`;
+});
+
+// ---------------------------------------------------------------- anteprima
+
+/**
+ * Mosaico a destra: un riquadro per serie/orientamento.
+ *
+ * I riquadri arrivano dal main mentre la copia in locale sta ancora andando,
+ * uno alla volta e gia' ridotti a miniatura. Qui non si legge nessun file e non
+ * si decodifica nulla di pesante: si dipinge su canvas quello che arriva.
+ */
+const preview = {
+  tiles: new Map(), // id -> { tile, el, canvas }
+  zoomId: null,
+  bright: 1,
+  contrast: 1,
+  dragging: false,
+  x0: 0,
+  y0: 0,
+};
+
+function previewReset() {
+  preview.tiles.clear();
+  $('viewer-grid').textContent = '';
+  $('viewer-meta').textContent = '';
+  $('viewer-empty').classList.remove('hidden');
+  closeZoom();
+}
+
+function previewCount() {
+  const n = preview.tiles.size;
+  $('viewer-meta').textContent = n ? `${n} serie` : '';
+  $('viewer-empty').classList.toggle('hidden', n > 0);
+}
+
+/** Dipinge i pixel del riquadro su un canvas alla loro risoluzione naturale. */
+function paintTile(canvas, tile) {
+  const cx = canvas.getContext('2d');
+
+  if (tile.jpeg) {
+    // JPEG baseline: lo decodifica il motore del browser, senza dipendenze
+    const blob = new Blob([tile.jpeg], { type: 'image/jpeg' });
+    createImageBitmap(blob)
+      .then((bmp) => {
+        canvas.width = bmp.width;
+        canvas.height = bmp.height;
+        canvas.getContext('2d').drawImage(bmp, 0, 0);
+        bmp.close();
+        canvas.classList.add('ready');
+      })
+      .catch(() => {
+        canvas.classList.remove('ready');
+      });
+    return;
+  }
+
+  if (!tile.cols || !tile.rows || (!tile.gray && !tile.rgb)) return;
+
+  canvas.width = tile.cols;
+  canvas.height = tile.rows;
+  const img = cx.createImageData(tile.cols, tile.rows);
+  const d = img.data;
+
+  if (tile.gray) {
+    const g = tile.gray;
+    for (let i = 0, j = 0; i < g.length; i++, j += 4) {
+      d[j] = d[j + 1] = d[j + 2] = g[i];
+      d[j + 3] = 255;
+    }
+  } else {
+    const src = tile.rgb;
+    for (let i = 0, j = 0; j < d.length; i += 3, j += 4) {
+      d[j] = src[i];
+      d[j + 1] = src[i + 1];
+      d[j + 2] = src[i + 2];
+      d[j + 3] = 255;
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  canvas.classList.add('ready');
+}
+
+function tileCaption(t) {
+  const head = [t.series != null ? `Serie ${t.series}` : null, t.view || null]
+    .filter(Boolean)
+    .join(' · ');
+  return head || t.modality || t.sampleFile || '—';
+}
+
+function renderTile(t) {
+  const known = preview.tiles.get(t.id);
+  const box = known ? known.box : el('figure', 'tile');
+  const canvas = known ? known.canvas : document.createElement('canvas');
+
+  if (!known) {
+    const stage = el('div', 'tile__stage');
+    stage.append(canvas);
+    box.append(stage, el('figcaption', 'tile__cap'), el('p', 'tile__note'));
+    box.addEventListener('click', () => openZoom(t.id));
+    $('viewer-grid').append(box);
+  }
+
+  // le serie arrivano nell'ordine in cui compaiono i file, non per numero:
+  // l'ordine visivo lo mette il CSS, senza ridisegnare i riquadri gia' presenti
+  box.style.order = String(t.series != null ? t.series : 900 + t.id);
+
+  box.querySelector('.tile__cap').textContent = tileCaption(t);
+  const note = box.querySelector('.tile__note');
+  const bits = [];
+  if (t.count) bits.push(`${t.count} img`);
+  if (t.fullSize) bits.push(t.fullSize);
+  if (t.description) bits.push(t.description);
+  note.textContent = t.note ? t.note : bits.join(' · ');
+  note.classList.toggle('tile__note--warn', !!t.note);
+
+  preview.tiles.set(t.id, { tile: t, box, canvas });
+  paintTile(canvas, t);
+  previewCount();
+
+  // se il riquadro ingrandito e' proprio questo, va rinfrescato anche li'
+  if (preview.zoomId === t.id) openZoom(t.id);
+}
+
+function applyZoomFilter() {
+  $('zoom-canvas').style.filter = `brightness(${preview.bright}) contrast(${preview.contrast})`;
+}
+
+function openZoom(id) {
+  const entry = preview.tiles.get(id);
+  if (!entry) return;
+  const t = entry.tile;
+  preview.zoomId = id;
+
+  const bits = [tileCaption(t)];
+  if (t.fullSize) bits.push(t.fullSize);
+  if (t.modality) bits.push(t.modality);
+  if (t.frames > 1) bits.push(`${t.frames} fotogrammi`);
+  $('zoom-caption').textContent = bits.join(' · ');
+
+  paintTile($('zoom-canvas'), t);
+  preview.bright = 1;
+  preview.contrast = 1;
+  applyZoomFilter();
+  $('viewer-zoom').hidden = false;
+}
+
+function closeZoom() {
+  preview.zoomId = null;
+  const z = $('viewer-zoom');
+  if (z) z.hidden = true;
+}
+
+(function bindZoom() {
+  const cv = $('zoom-canvas');
+  $('zoom-close').addEventListener('click', closeZoom);
+  cv.addEventListener('mousedown', (e) => {
+    preview.dragging = true;
+    preview.x0 = e.clientX;
+    preview.y0 = e.clientY;
+    e.preventDefault();
+  });
+  window.addEventListener('mouseup', () => {
+    preview.dragging = false;
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!preview.dragging) return;
+    preview.bright = Math.max(0.2, Math.min(3, preview.bright + (e.clientX - preview.x0) * 0.005));
+    preview.contrast = Math.max(0.2, Math.min(3, preview.contrast - (e.clientY - preview.y0) * 0.005));
+    preview.x0 = e.clientX;
+    preview.y0 = e.clientY;
+    applyZoomFilter();
+  });
+  cv.addEventListener('dblclick', () => {
+    preview.bright = 1;
+    preview.contrast = 1;
+    applyZoomFilter();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeZoom();
+  });
+})();
+
+window.api.onPreview((ev) => {
+  if (!ev) return;
+  if (ev.t === 'reset') previewReset();
+  else if (ev.t === 'tile' || ev.t === 'update') renderTile(ev.tile);
+  else if (ev.t === 'count') {
+    const entry = preview.tiles.get(ev.id);
+    if (entry) {
+      entry.tile.count = ev.count;
+      renderTile(entry.tile);
+    }
+  } else if (ev.t === 'error') {
+    $('viewer-meta').textContent = 'anteprima non disponibile';
+  }
 });
 
 // ---------------------------------------------------------------- STEP 1
@@ -315,6 +528,10 @@ function renderStudy() {
   $('clf-type').textContent = p.type;
   $('clf-pattern').textContent = p.pattern;
   $('clf-total').textContent = p.totalFiles;
+  // i file non-immagine (visualizzatore, DICOMDIR, autorun) non vengono copiati:
+  // dirlo evita la domanda "perche' il conteggio non torna col contenuto del CD"
+  $('clf-junk-row').classList.toggle('hidden', !p.skippedJunk);
+  $('clf-junk').textContent = p.skippedJunk || 0;
   $('clf-reasoning').textContent = p.reasoning;
   const tree = $('clf-tree');
   tree.textContent = '';
@@ -325,6 +542,26 @@ function renderStudy() {
   }
   $('override').value = '';
 }
+
+// Nota sotto la tendina: la modalità sequenziale è quella che riproduce un
+// lancio a mano da cmd, ed è la prima cosa da provare se il PACS rifiuta le
+// associazioni in più.
+const SEND_MODE_NOTE = {
+  normal: 'Poche associazioni DICOM in parallelo. Buon compromesso fra velocità e carico sul PACS.',
+  turbo:
+    'Molte associazioni in parallelo: molto più veloce sui supporti grandi, carica di più PC e PACS. ' +
+    'Se compare «Association Request Failed» il PACS ne accetta meno: scendere di modalità.',
+  single:
+    'Una sola associazione, staging non spezzato: identico a lanciare storescu a mano da cmd. ' +
+    'Da usare se il PACS rifiuta le associazioni contemporanee. Più lento, ma è il comportamento ' +
+    'che in cmd non perde mai un\'associazione.',
+};
+
+function updateSendModeNote() {
+  $('send-mode-note').textContent = SEND_MODE_NOTE[$('send-mode').value] || '';
+}
+$('send-mode').addEventListener('change', updateSendModeNote);
+updateSendModeNote();
 
 $('btn-back-media').addEventListener('click', () => showStep('media'));
 $('btn-start').addEventListener('click', startImport);
@@ -339,6 +576,7 @@ async function startImport() {
   $('btn-cleanup').classList.add('hidden');
   $('btn-restart').classList.add('hidden');
   $('cleanup-status').textContent = '';
+  $('btn-copy-cmd').classList.add('hidden');
   $('send-ok').textContent = 'Success: 0';
   $('send-err').textContent = 'Error: 0';
   $('copy-skipped').textContent = '';
@@ -349,7 +587,7 @@ async function startImport() {
 
   let result;
   try {
-    result = await window.api.runImport($('override').value, $('turbo').checked);
+    result = await window.api.runImport($('override').value, $('send-mode').value);
   } catch (err) {
     $('btn-stop').classList.add('hidden');
     appendLog(['', 'ERRORE: ' + err.message]);
@@ -378,7 +616,12 @@ $('btn-stop').addEventListener('click', async () => {
 });
 
 window.api.onProgress((d) => {
-  if (d.phase === 'copy') {
+  if (d.phase === 'extract') {
+    // estrazione dello ZIP: avviene prima della barra, si mostra nello step 1
+    $('detect-status').textContent = d.total
+      ? `Estrazione archivio: ${d.done}/${d.total} file…`
+      : 'Estrazione archivio…';
+  } else if (d.phase === 'copy') {
     setProgress(0, d.total ? (d.copied + d.skipped) / d.total : 0, {
       detail: `${d.copied}/${d.total} file${d.current ? ' · ' + d.current : ''}`,
     });
@@ -471,14 +714,30 @@ function onImportDone(result) {
     notes.push('Trasferimento interrotto: lo staging è già stato azzerato, si può ripartire da capo.');
   }
   if (s.retried) notes.push(`${s.retried} file ritentati automaticamente.`);
+  if (s.gaveUp) {
+    notes.push(
+      'Ritentativi interrotti: il PACS non rispondeva più. Verificare rete e stato ' +
+        'dell\'esame, poi rilanciare l\'importazione.'
+    );
+  }
+  if (s.stallKills) {
+    notes.push(`${s.stallKills} associazione/i abbattuta/e perché mute.`);
+  }
   if (s.failedFiles && s.failedFiles.length) {
     notes.push(`${s.failedFiles.length} file non recuperabili (formato o SOP class non accettata dal PACS).`);
   }
   if (result.copy && result.copy.skipped) {
     notes.push(`${result.copy.skipped} file non copiati (timeout/lettura): invio parziale.`);
   }
-  if (result.turbo) notes.push(`Modalità turbo: ${result.workers} associazioni in parallelo.`);
+  if (result.mode === 'single') {
+    notes.push('Invio sequenziale: una sola associazione, come da riga di comando.');
+  } else if (result.workers) {
+    notes.push(`${result.workers} associazioni in parallelo.`);
+  }
   if (result.iso) notes.push('ISO montata: verrà smontata alla pulizia.');
+  if (preview.tiles.size) {
+    notes.push(`Anteprima: ${preview.tiles.size} serie riconosciute durante la copia.`);
+  }
   notes.push('Se un esame non compare subito nel PACS, attendere 2–3 min e cercare per data.');
   $('sum-note').textContent = notes.join(' ');
 
@@ -488,6 +747,9 @@ function onImportDone(result) {
   $('btn-cleanup').disabled = !!result.interrupted;
   $('btn-restart').classList.remove('hidden');
   $('btn-cleanup').dataset.iso = result.iso || '';
+  // lo staging resta sul disco per la giornata: la riga copiata si può
+  // rilanciare da cmd sugli stessi file, per confrontare come si deve
+  if (result.send) $('btn-copy-cmd').classList.remove('hidden');
 
   if (result.interrupted) {
     $('cleanup-status').textContent = 'Staging azzerato automaticamente dopo l’interruzione.';
@@ -512,7 +774,19 @@ $('btn-cleanup').addEventListener('click', async () => {
   }
 });
 
+$('btn-copy-cmd').addEventListener('click', async () => {
+  try {
+    const r = await window.api.copyCommand();
+    $('cleanup-status').textContent = r && r.ok
+      ? 'Comando storescu copiato: incollalo in cmd per rilanciare lo stesso invio sugli stessi file.'
+      : 'Nessun comando da copiare: il trasferimento non è ancora partito.';
+  } catch (err) {
+    $('cleanup-status').textContent = 'Errore copia: ' + err.message;
+  }
+});
+
 $('btn-restart').addEventListener('click', () => {
+  previewReset();
   state.drive = state.prepared = state.plan = null;
   state.finished = false;
   $('drive-list').textContent = '';
@@ -521,6 +795,7 @@ $('btn-restart').addEventListener('click', () => {
   $('phase-eta').textContent = '';
   $('btn-cleanup').disabled = false;
   $('btn-cleanup').classList.add('hidden');
+  $('btn-copy-cmd').classList.add('hidden');
   $('btn-stop').classList.add('hidden');
   $('btn-to-study').disabled = true;
   showStep('media');

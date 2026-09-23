@@ -8,34 +8,92 @@ const config = require('./config');
 
 const ALLOWED_PATTERNS = ['MP*', '*.dcm'];
 
+// Ultima riga di comando lanciata: il main la offre all'operatore per rilanciare
+// lo stesso invio da cmd, identico, quando vuole confrontare.
+let lastCommand = '';
+
+// CreateProcess di Windows taglia la riga di comando a 32767 caratteri. I
+// ritentativi passano i file uno per uno come argomenti: si spezzano per
+// lunghezza, non per numero, perché con percorsi lunghi 200 file bastano a
+// superare il limite e il processo non parte nemmeno.
+const CMDLINE_BUDGET = 24000;
+
+// Sintassi di trasferimento proposte in associazione.
+//
+// ATTENZIONE a cosa significa "lossless" qui: questa build di storescu NON ha
+// codec JPEG linkati (dipende solo da dcmdata/dcmnet/dcmtls/oflog/ofstd), quindi
+// non ricomprime e non decomprime NULLA. I byte del dataset partono come stanno
+// sul supporto, sempre, con qualsiasi opzione --propose-*.
+//
+// A cosa serve allora --propose-lossless: a far accettare al PACS un contesto
+// di presentazione con la sintassi JPEG lossless, che serve ai file che sono
+// GIA' compressi cosi' sul CD (moltissime TC e RM lo sono). Con
+// --propose-uncompr quegli stessi file non troverebbero nessun contesto e
+// uscirebbero come "No presentation context for:", cioe' persi.
+const PROPOSE_FLAG = {
+  lossless: '--propose-lossless',
+  uncompr: '--propose-uncompr',
+  little: '--propose-little',
+  implicit: '--propose-implicit',
+};
+
 // `head` sono le opzioni prima del peer, `tail` gli argomenti posizionali dopo.
 function buildArgs(head, tail) {
-  return [
-    '-v',
-    ...head,
-    '--propose-lossless',
-    // Senza questi, DCMTK aspetta il PACS all'infinito (default: unlimited).
-    '--dimse-timeout', String(config.DIMSE_TIMEOUT_S),
-    '--acse-timeout', String(config.ACSE_TIMEOUT_S),
-    '--timeout', String(config.CONNECT_TIMEOUT_S),
+  const args = ['-v', ...head, PROPOSE_FLAG[config.PROPOSE_TS] || PROPOSE_FLAG.lossless];
+
+  // Senza questi, DCMTK aspetta il PACS all'infinito (default: unlimited).
+  // Si possono togliere per riprodurre esattamente un lancio a mano da cmd:
+  // resta comunque la guardia di inattivita' di questo modulo, che un lancio
+  // da cmd non ha.
+  if (config.SEND_TIMEOUTS) {
+    args.push(
+      '--dimse-timeout', String(config.DIMSE_TIMEOUT_S),
+      '--acse-timeout', String(config.ACSE_TIMEOUT_S),
+      '--timeout', String(config.CONNECT_TIMEOUT_S)
+    );
+  }
+
+  args.push(
     '-aet', config.SRC_AET,
     '-aec', config.DEST_AET,
     config.PACS_IP,
     config.PACS_PORT,
-    ...tail,
-  ];
+    ...tail
+  );
+  return args;
+}
+
+/**
+ * Riga di comando pronta da incollare in `cmd`.
+ *
+ * Serve a confrontare come si deve: l'app e il lancio a mano devono usare
+ * ESATTAMENTE gli stessi argomenti, altrimenti si confrontano due cose diverse.
+ * Le virgolette seguono le regole di CreateProcess, che e' anche il modo in cui
+ * spawn() passa gli argomenti: quello che si incolla e' quello che gira.
+ */
+function quoteForCmd(arg) {
+  const s = String(arg);
+  if (s !== '' && !/[\s"^&|<>()%!]/.test(s)) return s;
+  return '"' + s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1') + '"';
+}
+
+function commandLine(args) {
+  return [config.STORESCU, ...args].map(quoteForCmd).join(' ');
+}
+
+function matcher(pattern) {
+  return pattern === 'MP*' ? (n) => /^MP/i.test(n) : (n) => n.toLowerCase().endsWith('.dcm');
 }
 
 // File presenti in una cartella di staging che storescu prenderebbe in carico.
-function stagedFiles(dir, pattern) {
+async function stagedFiles(dir, pattern) {
   let names;
   try {
-    names = fs.readdirSync(dir, { withFileTypes: true });
+    names = await fs.promises.readdir(dir, { withFileTypes: true });
   } catch {
     return [];
   }
-  const match =
-    pattern === 'MP*' ? (n) => /^MP/i.test(n) : (n) => n.toLowerCase().endsWith('.dcm');
+  const match = matcher(pattern);
   return names.filter((e) => e.isFile() && match(e.name)).map((e) => path.join(dir, e.name));
 }
 
@@ -70,10 +128,16 @@ function fileArgs(files) {
 /**
  * Ogni file inviato deve stare dentro lo staging. I percorsi arrivano dal
  * parsing dell'output di storescu: trattarli come dati, non come verità.
+ *
+ * Il confronto ignora le maiuscole su Windows: `c:\tmp\...` e `C:\tmp\...`
+ * sono lo stesso percorso, ma un confronto sensibile al caso avrebbe
+ * classificato come "fuori dallo staging" file perfettamente legittimi,
+ * facendoli sparire dai contatori e dai ritentativi.
  */
 function insideStaging(p) {
-  const base = path.resolve(config.STAGING_DIR);
-  const c = path.resolve(p);
+  const fold = (s) => (process.platform === 'win32' ? s.toLowerCase() : s);
+  const base = fold(path.resolve(config.STAGING_DIR));
+  const c = fold(path.resolve(p));
   return c === base || c.startsWith(base + path.sep);
 }
 
@@ -83,6 +147,12 @@ function insideStaging(p) {
  * Il conteggio si basa SOLO su "Received Store Response (...)": storescu ne
  * emette esattamente una per file, con lo stato fra parentesi. Contare anche
  * "Sending file:" produrrebbe doppioni.
+ *
+ * Oltre ai timeout passati a DCMTK c'è una guardia nostra: se dal processo non
+ * arriva un byte per SEND_STALL_KILL_MS, il processo viene ucciso. Serve per i
+ * casi in cui DCMTK non applica i propri timeout — connessione stabilita e poi
+ * silenzio, o processo bloccato in scrittura sul socket — che è esattamente il
+ * modo in cui un invio restava appeso a tempo indeterminato con la barra ferma.
  */
 function runStorescu(args, { onLog, onFile, register }) {
   return new Promise((resolve, reject) => {
@@ -93,23 +163,64 @@ function runStorescu(args, { onLog, onFile, register }) {
     //   Windows può aggiungere un'attesa a ogni singolo file.
     // - TCP_BUFFER_LENGTH: senza variabile DCMTK usa i buffer di sistema
     //   (auto-tuning). Si passa solo se impostato esplicitamente.
-    const env = { ...process.env, TCP_NODELAY: '1' };
+    const env = { ...process.env };
+    if (config.TCP_NODELAY_ON) env.TCP_NODELAY = '1';
     if (config.TCP_BUFFER_BYTES > 0) env.TCP_BUFFER_LENGTH = String(config.TCP_BUFFER_BYTES);
-    const child = spawn(config.STORESCU, args, { windowsHide: true, env });
+
+    let child;
+    try {
+      child = spawn(config.STORESCU, args, { windowsHide: true, env });
+    } catch (err) {
+      return reject(err);
+    }
 
     let buf = '';
     let current = null;
     let killed = false;
+    let stallKilled = false;
+    let settled = false;
+    let lastByte = Date.now();
 
-    // il listener va agganciato PRIMA di register(): se l'invio è già stato
-    // annullato, register() emette '__cancel' subito
-    child.once('__cancel', () => {
+    const stop = (why) => {
+      if (child.exitCode !== null || child.signalCode) return;
       killed = true;
+      if (why === 'stall') stallKilled = true;
       try {
         child.kill();
       } catch {}
-    });
+      // se non muore col segnale gentile, si insiste una volta sola
+      setTimeout(() => {
+        try {
+          if (child.exitCode === null && !child.signalCode) child.kill('SIGKILL');
+        } catch {}
+      }, 5000).unref();
+    };
+
+    // il listener va agganciato PRIMA di register(): se l'invio è già stato
+    // annullato, register() emette '__cancel' subito
+    child.once('__cancel', () => stop('cancel'));
     if (register) register(child);
+
+    // il passo del controllo non deve essere più grosso della soglia, altrimenti
+    // con soglie brevi si aspetta fino a un giro intero in più
+    const step = Math.min(5000, Math.max(500, Math.round(config.SEND_STALL_KILL_MS / 4)));
+    const guard = setInterval(() => {
+      if (Date.now() - lastByte >= config.SEND_STALL_KILL_MS) {
+        onLog(
+          `> nessun dato da storescu da ${Math.round(config.SEND_STALL_KILL_MS / 1000)} s: ` +
+            'associazione abbattuta, i file non inviati rientrano nei ritentativi'
+        );
+        stop('stall');
+      }
+    }, step);
+    guard.unref();
+
+    const done = (fn, arg) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(guard);
+      fn(arg);
+    };
 
     // Formati verificati sui letterali dentro storescu.exe (DCMTK 3.7.0):
     //   "Sending file: <path>"
@@ -161,6 +272,7 @@ function runStorescu(args, { onLog, onFile, register }) {
     };
 
     const onChunk = (chunk) => {
+      lastByte = Date.now();
       buf += chunk.toString();
       // una riga patologicamente lunga non deve far crescere il buffer all'infinito
       if (buf.length > 1024 * 1024) buf = buf.slice(-4096);
@@ -169,21 +281,41 @@ function runStorescu(args, { onLog, onFile, register }) {
       for (const p of parts) handleLine(p.trim());
     };
 
-    child.stdout.on('data', onChunk);
-    child.stderr.on('data', onChunk);
+    if (child.stdout) child.stdout.on('data', onChunk);
+    if (child.stderr) child.stderr.on('data', onChunk);
 
-    child.on('error', (err) => reject(err));
+    child.on('error', (err) => done(reject, err));
     child.on('close', (code) => {
       if (buf.trim()) handleLine(buf.trim());
-      resolve({ exitCode: code, killed });
+      done(resolve, { exitCode: code, killed, stallKilled });
     });
   });
 }
 
-function chunk(arr, n) {
+/** Spezza un elenco di file in lotti che stanno nella riga di comando. */
+function chunkByLength(files, budget = CMDLINE_BUDGET) {
   const out = [];
-  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  let cur = [];
+  let len = 0;
+  for (const f of files) {
+    const cost = f.length + 3; // spazio + eventuali virgolette
+    if (cur.length && len + cost > budget) {
+      out.push(cur);
+      cur = [];
+      len = 0;
+    }
+    cur.push(f);
+    len += cost;
+  }
+  if (cur.length) out.push(cur);
   return out;
+}
+
+/** Distribuisce i lotti su N esecuzioni parallele (una associazione ciascuna). */
+function spread(batches, n) {
+  const lanes = Array.from({ length: Math.max(1, Math.min(n, batches.length)) }, () => []);
+  batches.forEach((b, i) => lanes[i % lanes.length].push(b));
+  return lanes;
 }
 
 /**
@@ -216,7 +348,9 @@ function sendStoreScu(opts, emit) {
     exitCode: null,
     retried: 0,
     cancelled: false,
+    stallKills: 0,
     permanentFailures: [],
+    failedFiles: [],
   };
 
   const startedAt = Date.now();
@@ -226,7 +360,10 @@ function sendStoreScu(opts, emit) {
   // Esito per file, chiave = percorso normalizzato. Serve a non contare due
   // volte lo stesso file fra primo passaggio e ritentativi: se un file passa da
   // fallito a riuscito i contatori si spostano, non si sommano.
-  const norm = (p) => path.resolve(p).toLowerCase();
+  const norm = (p) => {
+    const r = path.resolve(p);
+    return process.platform === 'win32' ? r.toLowerCase() : r;
+  };
   const outcomes = new Map(); // key -> true|false
   let retryQueue = new Map(); // key -> percorso originale
   const permanent = new Map();
@@ -308,6 +445,67 @@ function sendStoreScu(opts, emit) {
     if (cancelled) c.emit('__cancel');
   };
 
+  const killAll = () => {
+    for (const c of children) {
+      try {
+        c.emit('__cancel');
+      } catch {}
+    }
+  };
+
+  // Ogni esecuzione, sia del passaggio principale sia dei ritentativi, registra
+  // qui il proprio esito: il conteggio delle associazioni mute serve a decidere
+  // se ha ancora senso ritentare.
+  const runOne = async (args) => {
+    const line = commandLine(args);
+    emit({ type: 'log', line: '> ' + line });
+    // Si offre alla copia solo la forma "+sd <cartella>": l'unico pezzo
+    // variabile e' lo staging, che decidiamo noi. La forma con l'elenco dei
+    // file conterrebbe nomi presi dal supporto, e cmd espande i %...% anche
+    // dentro le virgolette.
+    if (args.includes('+sd')) {
+      lastCommand = line;
+      emit({ type: 'command', line });
+    }
+    const r = await runStorescu(args, { onLog, onFile, register });
+    if (r.exitCode) state.exitCode = r.exitCode;
+    if (r.stallKilled) state.stallKills++;
+    return r;
+  };
+
+  /**
+   * Esegue più processi storescu insieme e NON lascia indietro i fratelli se
+   * uno esplode: con Promise.all un rigetto usciva subito lasciando gli altri
+   * processi vivi e scollegati, che continuavano a scrivere sul PACS mentre
+   * l'app dichiarava l'invio finito.
+   */
+  const runParallel = async (argsList) => {
+    const results = await Promise.allSettled(argsList.map(runOne));
+    const errors = results.filter((r) => r.status === 'rejected').map((r) => r.reason);
+    if (errors.length) {
+      killAll();
+      for (const e of errors) {
+        emit({ type: 'log', line: `> errore storescu: ${String((e && e.message) || e)}` });
+      }
+      // tutte fallite: non è un problema di singolo file, è l'invio che non parte
+      if (errors.length === argsList.length) throw errors[0];
+    }
+  };
+
+  const collectUnattempted = async () => {
+    let n = 0;
+    for (const d of partDirs) {
+      for (const f of await stagedFiles(d, pattern)) {
+        const k = norm(f);
+        if (!outcomes.has(k) && !permanent.has(k) && !retryQueue.has(k)) {
+          retryQueue.set(k, f);
+          n++;
+        }
+      }
+    }
+    return n;
+  };
+
   const run = async () => {
     if (!fs.existsSync(config.STORESCU)) {
       throw new Error(
@@ -327,7 +525,7 @@ function sendStoreScu(opts, emit) {
     // contenuto del supporto ma si invia solo ciò che combacia con "MP*",
     // quindi il totale da copiare sarebbe irraggiungibile e l'ETA mai risolta.
     let inviabili = 0;
-    for (const d of partDirs) inviabili += stagedFiles(d, pattern).length;
+    for (const d of partDirs) inviabili += (await stagedFiles(d, pattern)).length;
     if (inviabili === 0) {
       // meglio dirlo subito che lasciar girare storescu a vuoto e chiudere con
       // "0 inviati" senza spiegazione
@@ -348,34 +546,13 @@ function sendStoreScu(opts, emit) {
     emitProgress();
 
     // ---- passaggio principale: un worker per sottocartella
-    const results = await Promise.all(
-      partDirs.map((d) => {
-        const args = dirArgs(d, pattern);
-        emit({ type: 'log', line: `> storescu ${args.join(' ')}` });
-        return runStorescu(args, { onLog, onFile, register });
-      })
-    );
-    state.exitCode = results.reduce((acc, r) => (r.exitCode ? r.exitCode : acc), 0);
+    await runParallel(partDirs.map((d) => dirArgs(d, pattern)));
 
     // Se storescu è morto a metà (timeout DIMSE perché il PACS non rispondeva
-    // più) i file successivi non hanno prodotto NESSUNA riga: non risultano né
-    // riusciti né falliti. Vanno recuperati confrontando con lo staging, altrimenti
-    // sparirebbero in silenzio.
-    const collectUnattempted = () => {
-      let n = 0;
-      for (const d of partDirs) {
-        for (const f of stagedFiles(d, pattern)) {
-          const k = norm(f);
-          if (!outcomes.has(k) && !permanent.has(k) && !retryQueue.has(k)) {
-            retryQueue.set(k, f);
-            n++;
-          }
-        }
-      }
-      return n;
-    };
-
-    const missing = collectUnattempted();
+    // più, o guardia di inattività) i file successivi non hanno prodotto NESSUNA
+    // riga: non risultano né riusciti né falliti. Vanno recuperati confrontando
+    // con lo staging, altrimenti sparirebbero in silenzio.
+    const missing = await collectUnattempted();
     if (missing > 0) {
       emit({
         type: 'log',
@@ -409,12 +586,40 @@ function sendStoreScu(opts, emit) {
 
       emitProgress();
 
-      // il command line di Windows ha un limite: si spezza in blocchi
-      for (const batch of chunk(files, 200)) {
-        if (cancelled) break;
-        await runStorescu(fileArgs(batch), { onLog, onFile, register });
+      const before = state.success + state.failed;
+      const killsBefore = state.stallKills;
+
+      // stesso parallelismo del passaggio principale: un ritentativo su
+      // qualche migliaio di file non deve costare più dell'invio iniziale
+      const lanes = spread(chunkByLength(files), partDirs.length);
+      await Promise.all(
+        lanes.map(async (lane) => {
+          for (const batch of lane) {
+            if (cancelled) return;
+            try {
+              await runOne(fileArgs(batch));
+            } catch (err) {
+              emit({ type: 'log', line: `> errore storescu: ${String((err && err.message) || err)}` });
+            }
+          }
+        })
+      );
+      await collectUnattempted();
+
+      // Un giro intero senza che UN SOLO file passi, chiuso abbattendo
+      // associazioni mute: il PACS non sta rispondendo e i giri successivi
+      // costerebbero solo altri minuti di attesa a vuoto. Si chiude qui,
+      // dicendolo, invece di tenere l'operatore davanti a una barra ferma.
+      if (state.success + state.failed === before && state.stallKills > killsBefore) {
+        emit({
+          type: 'log',
+          line:
+            '> il PACS non risponde: ritentativi interrotti. ' +
+            'Verificare la rete o che l\'esame non sia aperto in refertazione, poi riprovare.',
+        });
+        state.gaveUp = true;
+        break;
       }
-      collectUnattempted();
     }
 
     stalled = false;
@@ -438,14 +643,27 @@ function sendStoreScu(opts, emit) {
     });
     emitProgress();
   }, 5000);
+  watchdog.unref();
 
-  const promise = run().finally(() => clearInterval(watchdog));
+  const promise = run().finally(() => {
+    clearInterval(watchdog);
+    // nessun processo storescu deve sopravvivere alla fine dell'invio, né
+    // quando esce bene né quando esce per errore
+    killAll();
+  });
   promise.cancel = () => {
     cancelled = true;
     state.cancelled = true;
-    for (const c of children) c.emit('__cancel');
+    killAll();
   };
   return promise;
 }
 
-module.exports = { sendStoreScu };
+module.exports = {
+  sendStoreScu,
+  chunkByLength,
+  insideStaging,
+  commandLine,
+  quoteForCmd,
+  lastSentCommand: () => lastCommand,
+};
