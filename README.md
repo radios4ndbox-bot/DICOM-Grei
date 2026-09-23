@@ -7,15 +7,23 @@ Pensata per postazioni Windows **senza permessi di amministratore**. Il pacchett
 prodotto da **GitHub Actions** (`windows-latest`, Node 24) perché `npm` è bloccato dal
 proxy ospedaliero.
 
-## Parametri PACS (hardcoded in `src/main/config.js`)
+## Parametri PACS (da configurare al primo avvio)
 
-| | |
+I valori presenti nel repository sono **segnaposto**: i parametri reali della rete non
+sono versionati. Si impostano una volta sola dall'ingranaggio in alto a destra e vengono
+salvati in `%APPDATA%\dicom-import-tool\settings.json`, fuori dal repository. Per
+attrezzare più postazioni si può copiare quel file sulle altre.
+
+Finché non sono configurati, il badge in alto mostra `PACS @ 127.0.0.1:104` e l'invio
+fallisce con un errore di connessione: è il segnale che la configurazione manca.
+
+| | predefinito nel repo |
 |---|---|
 | AET sorgente | `DICOM_IMPORT` |
-| AET Synapse | `PACS` |
-| IP PACS | `127.0.0.1` |
+| AET destinazione | `PACS` |
+| Indirizzo PACS | `127.0.0.1` |
 | Porta | `104` |
-| storescu | `%USERPROFILE%\Desktop\dcmtk\bin\storescu.exe` |
+| storescu | incluso in `resources/dcmtk/bin` (fallback: `%USERPROFILE%\Desktop\dcmtk\bin`) |
 | Staging | `C:\tmp\dicom_import` |
 
 ## Flusso
