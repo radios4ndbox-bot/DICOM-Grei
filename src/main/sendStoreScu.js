@@ -589,9 +589,20 @@ function sendStoreScu(opts, emit) {
       const before = state.success + state.failed;
       const killsBefore = state.stallKills;
 
-      // stesso parallelismo del passaggio principale: un ritentativo su
-      // qualche migliaio di file non deve costare più dell'invio iniziale
-      const lanes = spread(chunkByLength(files), partDirs.length);
+      // Di norma si tiene il parallelismo del passaggio principale: un
+      // ritentativo su qualche migliaio di file non deve costare più
+      // dell'invio iniziale. Ma se finora NON è passato un solo file, il
+      // problema non è il singolo trasferimento: la spiegazione più probabile
+      // è che le associazioni in più vengano rifiutate. In quel caso si
+      // ritenta con UNA sola, cioè come il lancio manuale da cmd.
+      const lanesCount = state.success > 0 ? partDirs.length : 1;
+      if (lanesCount === 1 && partDirs.length > 1) {
+        emit({
+          type: 'log',
+          line: '> nessun file passato finora: ritentativo con una sola associazione',
+        });
+      }
+      const lanes = spread(chunkByLength(files), lanesCount);
       await Promise.all(
         lanes.map(async (lane) => {
           for (const batch of lane) {
@@ -606,16 +617,21 @@ function sendStoreScu(opts, emit) {
       );
       await collectUnattempted();
 
-      // Un giro intero senza che UN SOLO file passi, chiuso abbattendo
-      // associazioni mute: il PACS non sta rispondendo e i giri successivi
-      // costerebbero solo altri minuti di attesa a vuoto. Si chiude qui,
-      // dicendolo, invece di tenere l'operatore davanti a una barra ferma.
-      if (state.success + state.failed === before && state.stallKills > killsBefore) {
+      // Un giro intero senza che UN SOLO file si muova. Rifarlo con gli stessi
+      // argomenti costerebbe solo altri minuti di attesa a vuoto: si chiude
+      // qui, dicendo perché, invece di tenere l'operatore davanti a una barra
+      // ferma. Vale sia quando le associazioni sono state abbattute perché
+      // mute, sia quando storescu è uscito senza produrre risposte
+      // riconoscibili: in entrambi i casi insistere non cambia l'esito.
+      if (state.success + state.failed === before) {
+        const mute = state.stallKills > killsBefore;
         emit({
           type: 'log',
-          line:
-            '> il PACS non risponde: ritentativi interrotti. ' +
-            'Verificare la rete o che l\'esame non sia aperto in refertazione, poi riprovare.',
+          line: mute
+            ? '> il PACS non risponde: ritentativi interrotti. ' +
+              'Verificare la rete o che l\'esame non sia aperto in refertazione, poi riprovare.'
+            : '> nessun file è passato in questo giro e storescu non ha segnalato risposte: ' +
+              'ritentativi interrotti. Con «Copia comando» si può rilanciare la stessa riga in cmd e confrontare.',
         });
         state.gaveUp = true;
         break;

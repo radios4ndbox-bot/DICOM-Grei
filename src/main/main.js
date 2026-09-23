@@ -300,7 +300,7 @@ ipcMain.handle('run-import', async (_e, opts) => {
   // a mano da cmd. È la modalità da scegliere se il PACS limita le associazioni
   // contemporanee per AE title: oltre quel limite le richieste in più vengono
   // rifiutate, e sono quelle che l'operatore vede "perdersi".
-  const mode = opts && typeof opts.mode === 'string' ? opts.mode : 'normal';
+  const mode = opts && typeof opts.mode === 'string' ? opts.mode : 'single';
   const workers =
     mode === 'single' ? 1 : mode === 'turbo' ? config.WORKERS_TURBO : config.WORKERS_NORMAL;
   const turbo = mode === 'turbo';

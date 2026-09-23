@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   // classificazione). Qui passano solo scelte dell'utente, mai percorsi.
   classify: () => ipcRenderer.invoke('classify'),
   // mode: 'single' (una sola associazione, come da cmd) | 'normal' | 'turbo'
-  runImport: (type, mode) => ipcRenderer.invoke('run-import', { type: type || '', mode: mode || 'normal' }),
+  runImport: (type, mode) => ipcRenderer.invoke('run-import', { type: type || '', mode: mode || 'single' }),
   // riga di comando dell'ultimo invio, negli appunti: serve a rilanciarla identica da cmd
   copyCommand: () => ipcRenderer.invoke('copy-command'),
   stopImport: () => ipcRenderer.invoke('stop-import'),
