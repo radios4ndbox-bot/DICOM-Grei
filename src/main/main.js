@@ -74,16 +74,18 @@ function toWindow(channel, data) {
   }
 }
 
+// Stessa finestra del tool, così il passaggio dall'intro al programma non
+// cambia né dimensione né posizione.
+const MAIN_BOUNDS = { width: 1320, height: 800, minWidth: 1040, minHeight: 660 };
+const APP_BG = '#f4fbfa';
+
 function createSplash() {
   const opts = {
-    width: 440,
-    height: 320,
-    frame: false,
-    transparent: true,
-    resizable: false,
+    ...MAIN_BOUNDS,
     center: true,
-    alwaysOnTop: true,
     show: true,
+    backgroundColor: APP_BG,
+    title: 'DICOM Import Tool',
     webPreferences: {
       preload: path.join(__dirname, 'splashPreload.js'),
       contextIsolation: true,
@@ -93,50 +95,63 @@ function createSplash() {
   };
   if (fs.existsSync(APP_ICON)) opts.icon = APP_ICON;
   splashWindow = new BrowserWindow(opts);
+  splashWindow.removeMenu();
   splashWindow.loadURL(fileUrl('../renderer/splash.html'));
 
   splashWindow.on('closed', () => {
     splashWindow = null;
-    // splash chiusa senza premere "Import": non c'è nulla da mostrare
+    // intro chiusa prima della fine: l'operatore voleva uscire
     if (!mainRevealed) app.quit();
   });
 }
 
-// Chiude la splash e mostra la finestra principale in dissolvenza. Solo su "Import".
+// Chiude l'intro e mostra la finestra principale in dissolvenza, dove stava
+// l'intro: se nel frattempo è stata spostata, ridimensionata o ingrandita, il
+// programma compare lì.
 function revealMain() {
   if (mainRevealed) return;
   mainRevealed = true;
 
-  const win = mainWindow;
-  if (win && !win.isDestroyed()) {
-    win.setOpacity(0);
-    win.show();
-    let o = 0;
-    const timer = setInterval(() => {
-      // la finestra può essere chiusa durante la dissolvenza: senza questo
-      // controllo il timer chiamava setOpacity su un oggetto distrutto
-      if (win.isDestroyed()) {
-        clearInterval(timer);
-        return;
-      }
-      o = Math.min(1, o + 0.1);
-      win.setOpacity(o);
-      if (o >= 1) clearInterval(timer);
-    }, 24);
-  }
-
-  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.destroy();
+  const splash = splashWindow && !splashWindow.isDestroyed() ? splashWindow : null;
   splashWindow = null;
+  // l'intro si chiude solo a programma visibile: dissolvenza incrociata, senza
+  // mostrare il desktop fra le due finestre
+  const closeSplash = () => {
+    if (splash && !splash.isDestroyed()) splash.destroy();
+  };
+
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return closeSplash();
+
+  if (splash) {
+    if (splash.isMaximized()) win.maximize();
+    else win.setBounds(splash.getBounds());
+  }
+  win.setOpacity(0);
+  win.show();
+  let o = 0;
+  const timer = setInterval(() => {
+    // la finestra può essere chiusa durante la dissolvenza: senza questo
+    // controllo il timer chiamava setOpacity su un oggetto distrutto
+    if (win.isDestroyed()) {
+      clearInterval(timer);
+      closeSplash();
+      return;
+    }
+    o = Math.min(1, o + 0.1);
+    win.setOpacity(o);
+    if (o >= 1) {
+      clearInterval(timer);
+      closeSplash();
+    }
+  }, 24);
 }
 
 function createMain() {
   const opts = {
-    width: 1320,
-    height: 800,
-    minWidth: 1040,
-    minHeight: 660,
+    ...MAIN_BOUNDS,
     show: false,
-    backgroundColor: '#f4fbfa',
+    backgroundColor: APP_BG,
     title: 'DICOM Import Tool',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

@@ -21,9 +21,7 @@
     background: radial-gradient(120% 120% at 50% 40%, #f4fbfa 0%, #e9f5ff 70%, #dfeefc 100%);
     font-family: "Sora", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     overflow: hidden;
-    transition: opacity 0.45s ease;
   }
-  body.fade-out { opacity: 0; }
 
   .splash-credit {
     position: fixed;
@@ -36,50 +34,10 @@
   }
 
   /* stage sized to the artwork band only (no empty square around it) */
-  .stage { width: min(86vw, 380px); aspect-ratio: 348 / 98; }
+  /* la finestra è quella del tool (1320×800): logo grande, con margine per
+     spirale e onde che sbordano dalla fascia */
+  .stage { width: min(62vw, 720px); aspect-ratio: 348 / 98; }
   .logo  { width: 100%; height: 100%; display: block; }
-
-  /* ---------------------------------------------------------------
-     IMPORT button — appears once the animation has finished
-     --------------------------------------------------------------- */
-  .import-btn {
-    position: relative;
-    left: 0; /* centrato sotto il titolo (ora ricentrato) */
-    width: 180px;
-    height: 60px;
-    margin-top: 24px;
-    cursor: pointer;
-    background: transparent;
-    border: 1px solid #a9d7de;
-    outline: none;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.5s ease, background 0.6s ease-in-out;
-  }
-  .import-btn.show { opacity: 1; pointer-events: auto; }
-  .import-btn:hover { background: rgba(0, 182, 205, 0.10); }
-
-  .import-btn svg {
-    position: absolute;
-    left: 0;
-    top: 0;
-    fill: none;
-    stroke: #00b6cd;
-    stroke-width: 1.5;
-    stroke-dasharray: 150 480;
-    stroke-dashoffset: 150;
-    transition: stroke-dashoffset 1s ease-in-out;
-  }
-  .import-btn:hover svg { stroke-dashoffset: -480; }
-
-  .import-btn span {
-    position: relative;
-    color: #0093ab;
-    font-size: 18px;
-    font-weight: 300;
-    letter-spacing: 0.06em;
-  }
-  .import-btn[disabled] { cursor: default; opacity: 0.6; }
 
   /* La spirale e le onde escono dalla fascia del viewBox (alta 98): si
      lasciano sbordare invece di allargare lo stage. */
@@ -311,13 +269,6 @@
       </g>
     </svg>
   </div>
-
-  <button id="import-btn" class="import-btn" type="button">
-    <svg width="180" height="60" viewBox="0 0 180 60" aria-hidden="true">
-      <polyline points="179,1 179,59 1,59 1,1 179,1" />
-    </svg>
-    <span>Import</span>
-  </button>
 
   <p class="splash-credit">© 2026 StructuRad. All rights reserved. Powered by RadioPako.</p>
 
