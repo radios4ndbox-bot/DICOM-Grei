@@ -8,6 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "dev": "electron .",
     "dist": "electron-builder --win --x64 --publish never"
   },
   "devDependencies": {
