@@ -16,9 +16,9 @@
      --t-volo), altrimenti si leggono come tre movimenti separati;
    · le classi vanno sugli elementi interessati, mai sul <body>.
 
-   I TEMPI DEL FINALE li scrive intro.js nelle proprietà --t-*: una sola
-   fonte. Quelli degli atti I–II sono i ritardi qui sotto, contati dal
-   momento in cui la scena riceve .parte.
+   I TEMPI li scrive intro.js nelle proprietà --t-*: una sola fonte. Gli
+   scarti dell'atto II qui sotto sono contati da --t-globo (la fine della
+   spirale), così accelerare la spirale fa slittare tutto il resto.
    ══════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -30,6 +30,9 @@
 @property --salita { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @property --d      { syntax: '<time>';   inherits: false; initial-value: 0ms; }
 @property --pop-delay { syntax: '<time>'; inherits: false; initial-value: 0ms; }
+/* fine della spirale: l'atto II parte da qui. La scrive intro.js dai suoi
+   TEMPI, ereditata di proposito (la leggono gli elementi dentro la scena). */
+@property --t-globo { syntax: '<time>'; inherits: true; initial-value: 1600ms; }
 
 /* ══════════════════════════════════════════════════════════════════
    LA SCENA
@@ -86,8 +89,9 @@
 
 /* ══════════════════════════════════════════════════════════════════
    ATTO II — pulse, onde, DICOM rivelato dall'onda, sottotitolo
+   Ritardi contati da --t-globo, il momento in cui il globo è completo.
    ══════════════════════════════════════════════════════════════════ */
-.intro-scena.parte .globe { animation: introPulse .7s ease-out 2.6s both; }
+.intro-scena.parte .globe { animation: introPulse .7s ease-out calc(var(--t-globo) + 50ms) both; }
 @keyframes introPulse {
     0% { transform: scale(1); }
    35% { transform: scale(1.12); }
@@ -102,8 +106,8 @@
   opacity: 0;
 }
 .intro-scena.parte .ripple { animation: introOnda 1.2s cubic-bezier(.2, .6, .35, 1) forwards; }
-.intro-scena.parte .ripple:nth-of-type(1) { animation-delay: 2.65s; }
-.intro-scena.parte .ripple:nth-of-type(2) { animation-delay: 2.85s; }
+.intro-scena.parte .ripple:nth-of-type(1) { animation-delay: calc(var(--t-globo) + 100ms); }
+.intro-scena.parte .ripple:nth-of-type(2) { animation-delay: calc(var(--t-globo) + 300ms); }
 @keyframes introOnda {
     0% { opacity: .9; transform: scale(1); }
   100% { opacity: 0;  transform: scale(6.5); }
@@ -111,16 +115,16 @@
 
 /* il fronte dell'onda (maschera dal bordo morbido) scopre D-I-C e M */
 .intro-scena .reveal-disc { r: 0; }
-.intro-scena.parte .reveal-disc { animation: introScopri 1s cubic-bezier(.2, .6, .35, 1) 2.7s forwards; }
+.intro-scena.parte .reveal-disc { animation: introScopri 1s cubic-bezier(.2, .6, .35, 1) calc(var(--t-globo) + 150ms) forwards; }
 @keyframes introScopri { from { r: 0; } to { r: 200px; } }
 
 /* dove passa l'onda la lettera nasce teal e si scurisce */
 .intro-scena .wordmark path { fill: #1a1a1a; }
-.intro-scena.parte .wordmark path { animation: introInchiostro 1.4s ease-out 2.7s both; }
+.intro-scena.parte .wordmark path { animation: introInchiostro 1.4s ease-out calc(var(--t-globo) + 150ms) both; }
 @keyframes introInchiostro { from { fill: #00b6cd; } to { fill: #1a1a1a; } }
 
 .intro-scena .subtitle { opacity: 0; }
-.intro-scena.parte .subtitle { animation: introAppare .5s ease-out 3.5s both; }
+.intro-scena.parte .subtitle { animation: introAppare .5s ease-out calc(var(--t-globo) + 950ms) both; }
 @keyframes introAppare { from { opacity: 0; } to { opacity: 1; } }
 
 /* ══════════════════════════════════════════════════════════════════

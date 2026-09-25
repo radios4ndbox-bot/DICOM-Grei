@@ -22,10 +22,12 @@
   if (!scena || !stage || !header || !pagina) return;
 
   var TEMPI = {
-    primo: 150,        // partenza del primo spicchio
-    passo: 80,         // fra uno spicchio e il successivo
-    spirale: 1700,     // volo di ciascuno spicchio
-    uscita: 4200,      // parte il volo del globo (sottotitolo entrato a 4.0 s)
+    primo: 120,        // partenza del primo spicchio
+    passo: 50,         // fra uno spicchio e il successivo
+    spirale: 1000,     // volo di ciascuno spicchio
+    // globo completo = primo + 8 passi + spirale; da lì in intro.css partono
+    // pulse, onde, lettere (+150 ms) e sottotitolo (+950 ms, entrato a +1450)
+    dopoGlobo: 1650,   // parte il volo del globo, contato dal globo completo
     volo: 800,         // volo, banda e pagina: una sola durata
     veloVia: 340,      // arrivata sulla barra, la banda si dissolve
     passoBarra: 55,    // cascata dell'intestazione
@@ -69,12 +71,16 @@
   // In Electron la finestra nasce nascosta e le animazioni non avanzano
   // finché non viene dipinta; la rete di sicurezza parte comunque.
   var partito = false;
+  var fineSpirale = 0;
   function via() {
     if (partito) return;
     partito = true;
+    var segs = scena.querySelectorAll('.seg').length;
+    fineSpirale = TEMPI.primo + (segs - 1) * TEMPI.passo + TEMPI.spirale;
+    scena.style.setProperty('--t-globo', fineSpirale + 'ms');
     scena.classList.add('parte');
     spirale();
-    timer = setTimeout(esci, TEMPI.uscita);
+    timer = setTimeout(esci, fineSpirale + TEMPI.dopoGlobo);
   }
   requestAnimationFrame(function () { requestAnimationFrame(via); });
   setTimeout(via, TEMPI.reteSicurezza);
