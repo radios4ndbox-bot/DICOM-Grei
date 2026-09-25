@@ -106,10 +106,10 @@ function preflightSend(pattern) {
  * pensa copyStage; i file ancora in copia stanno in una sottocartella, e
  * storescu senza +r non scende nelle sottocartelle).
  *
- * Prima qui si rifiltrava per pattern, e le due viste non combaciavano: con
- * "*.dcm" il filtro nostro trovava i file mentre storescu non ne trovava
- * nessuno. Il disallineamento faceva risultare "mai tentati" dei file che
- * nessuno aveva mai provato a inviare, e li mandava nei ritentativi.
+ * Prima qui si rifiltrava per pattern: due filtri (il nostro e quello di
+ * storescu) che dovevano combaciare. Se non combaciavano, dei file risultavano
+ * "mai tentati" senza che nessuno avesse provato a inviarli, e finivano nei
+ * ritentativi. Senza filtro la vista e' una sola.
  */
 async function stagedFiles(dir) {
   let names;
@@ -146,13 +146,14 @@ function sleep(ms, isCancelled) {
  * inviare (copyStage copia soltanto quelli: nel Tipo A i soli "MP*", negli
  * altri tutti rinominati in .dcm), quindi basta indicare la cartella.
  *
- * E non e' una scelta di stile: con questo storescu il pattern "*.dcm" non
- * combacia con NESSUN file. Verificato lanciandolo come fa l'app, con spawn e
- * array di argomenti: "MP*" e "IMG*" trovano i file, "*.dcm" restituisce
- * "no input files to be sent". Il passaggio principale inviava quindi zero
- * file per i Tipi B, C e D, e tutto il trasferimento finiva nei ritentativi,
- * che passano i file elencati uno per uno: funzionava, ma per la strada piu'
- * lenta possibile.
+ * Il commit 10e5674 lo motivava con "*.dcm che con spawn non trova nessun
+ * file". Rimisurato su Windows 11 con lo storescu incluso contro storescp
+ * (25/09/2026): spawn con --scan-pattern *.dcm invia tutti i .dcm, anche
+ * .DCM maiuscolo, esattamente come da cmd. "no input files to be sent" esce
+ * solo se le virgolette arrivano dentro l'argomento ('"*.dcm"'), cosa che
+ * con spawn non succede. Quella motivazione non regge; la scelta si':
+ * senza pattern la cartella e' l'unica fonte di verita', e stagedFiles non
+ * deve replicare la logica di corrispondenza di storescu.
  *
  * Il vincolo di non passare mai "*" resta rispettato: qui non si passa alcun
  * carattere jolly, e storescu percorre solo la cartella che gli indichiamo.

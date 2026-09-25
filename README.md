@@ -51,10 +51,13 @@ I casi gestiti:
 | G | immagini già `.dcm` in sottocartelle (`D:\0\0.x\*.dcm`) | si copiano **solo i `.dcm`**, il resto è il visualizzatore | i `.dcm` |
 
 A `storescu` l'app passa **la cartella di staging e basta**, senza
-`--scan-pattern`: in staging c'è già solo ciò che va inviato. Con questo
-`storescu`, `--scan-pattern "*.dcm"` lanciato come fa l'app non trova nessun
-file (verificato su `main`, commit 10e5674): il passaggio principale inviava
-zero file e tutto finiva nei ritentativi, uno per uno. I file ancora in copia
+`--scan-pattern`: in staging c'è già solo ciò che va inviato, e così l'elenco
+dei file da inviare lo decide la cartella e non un secondo filtro da tenere
+allineato. (Il commit 10e5674 sosteneva che `--scan-pattern "*.dcm"` lanciato
+con `spawn` non trovasse nessun file. Rimisurato il 25/09/2026 su Windows 11
+con lo `storescu` incluso contro `storescp`: li trova tutti, anche `.DCM`,
+come da `cmd`, in accordo con il report sul campo. Fallisce solo se le
+virgolette finiscono dentro l'argomento.) I file ancora in copia
 stanno nella sottocartella `~copia`, e `storescu` senza `+r` non scende nelle
 sottocartelle: non può prendere un file a metà nemmeno quando una lettura
 bloccata di un DVD rovinato lo tiene aperto e non lo si può cancellare.
