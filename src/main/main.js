@@ -28,8 +28,6 @@ const settings = require('./settings');
 const APP_ICON = path.join(__dirname, '..', '..', 'build', 'icon.ico');
 
 let mainWindow = null;
-let splashWindow = null;
-let mainRevealed = false;
 
 /**
  * Stato autorevole del flusso, tenuto nel main.
@@ -74,82 +72,16 @@ function toWindow(channel, data) {
   }
 }
 
-// Stessa finestra del tool, così il passaggio dall'intro al programma non
-// cambia né dimensione né posizione.
+// L'intro gira dentro la finestra del programma (renderer/intro.js): alla
+// fine il globo vola nell'intestazione e si porta su la pagina, cosa che fra
+// due finestre separate non si potrebbe fare.
 const MAIN_BOUNDS = { width: 1320, height: 800, minWidth: 1040, minHeight: 660 };
-const APP_BG = '#f4fbfa';
-
-function createSplash() {
-  const opts = {
-    ...MAIN_BOUNDS,
-    center: true,
-    show: true,
-    backgroundColor: APP_BG,
-    title: 'DICOM Grei',
-    webPreferences: {
-      preload: path.join(__dirname, 'splashPreload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  };
-  if (fs.existsSync(APP_ICON)) opts.icon = APP_ICON;
-  splashWindow = new BrowserWindow(opts);
-  splashWindow.removeMenu();
-  splashWindow.loadURL(fileUrl('../renderer/splash.html'));
-
-  splashWindow.on('closed', () => {
-    splashWindow = null;
-    // intro chiusa prima della fine: l'operatore voleva uscire
-    if (!mainRevealed) app.quit();
-  });
-}
-
-// Chiude l'intro e mostra la finestra principale in dissolvenza, dove stava
-// l'intro: se nel frattempo è stata spostata, ridimensionata o ingrandita, il
-// programma compare lì.
-function revealMain() {
-  if (mainRevealed) return;
-  mainRevealed = true;
-
-  const splash = splashWindow && !splashWindow.isDestroyed() ? splashWindow : null;
-  splashWindow = null;
-  // l'intro si chiude solo a programma visibile: dissolvenza incrociata, senza
-  // mostrare il desktop fra le due finestre
-  const closeSplash = () => {
-    if (splash && !splash.isDestroyed()) splash.destroy();
-  };
-
-  const win = mainWindow;
-  if (!win || win.isDestroyed()) return closeSplash();
-
-  if (splash) {
-    if (splash.isMaximized()) win.maximize();
-    else win.setBounds(splash.getBounds());
-  }
-  win.setOpacity(0);
-  win.show();
-  let o = 0;
-  const timer = setInterval(() => {
-    // la finestra può essere chiusa durante la dissolvenza: senza questo
-    // controllo il timer chiamava setOpacity su un oggetto distrutto
-    if (win.isDestroyed()) {
-      clearInterval(timer);
-      closeSplash();
-      return;
-    }
-    o = Math.min(1, o + 0.1);
-    win.setOpacity(o);
-    if (o >= 1) {
-      clearInterval(timer);
-      closeSplash();
-    }
-  }, 24);
-}
+const APP_BG = '#f4fbfa'; // come il centro del fondo dell'intro: nessun lampo all'apertura
 
 function createMain() {
   const opts = {
     ...MAIN_BOUNDS,
+    center: true,
     show: false,
     backgroundColor: APP_BG,
     title: 'DICOM Grei',
@@ -166,13 +98,14 @@ function createMain() {
 
   mainWindow.removeMenu();
   mainWindow.loadURL(fileUrl('../renderer/index.html'));
+  // si mostra a pagina pronta: l'intro parte sul primo fotogramma dipinto
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-ipcMain.on('splash-confirm', () => revealMain());
 
 // ---------------------------------------------------------------- IPC
 
@@ -560,7 +493,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    const w = mainRevealed ? mainWindow : splashWindow;
+    const w = mainWindow;
     if (w && !w.isDestroyed()) {
       if (w.isMinimized()) w.restore();
       w.focus();
@@ -599,13 +532,10 @@ app.whenReady().then(() => {
   purgeIfIdle();
   setInterval(purgeIfIdle, 10 * 60 * 1000).unref();
 
-  createSplash();
   createMain();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      mainRevealed = false;
-      createSplash();
       createMain();
     }
   });

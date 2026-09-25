@@ -858,6 +858,6 @@ window.api
 
 showStep('media');
 
-// Rilevamento automatico al lancio: la finestra si carica nascosta dietro la
-// splash, quindi quando l'operatore la vede i supporti sono già elencati.
+// Rilevamento automatico al lancio: gira mentre l'intro copre la pagina, quindi
+// quando la pagina sale i supporti sono già elencati.
 detect();

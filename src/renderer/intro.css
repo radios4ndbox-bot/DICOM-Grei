@@ -1,0 +1,263 @@
+/* ══════════════════════════════════════════════════════════════════
+   INTRO di DICOM Grei — dentro la finestra del programma
+
+     I    spirale di spicchi che si stringe nel globo       (intro.js)
+     II   il globo pulsa, l'onda scopre DICOM, il sottotitolo
+     III  il globo vola nell'intestazione e si porta su la pagina;
+          intestazione e procedura entrano a cascata
+     IV   per ultimo Grei si disegna accanto a DICOM
+
+   L'atto III viene dalla coreografia di ER Oncology Archivist
+   (Animazioni Archivist/intro.css): volo del logo con FLIP, banda che
+   risale e diventa la barra, pagina agganciata al bordo della banda.
+   Le sue regole valgono anche qui, e i commenti dicono dove contano:
+   · nel finale si animano solo transform e opacity;
+   · volo, banda e pagina condividono curva e durata (--intro-traino,
+     --t-volo), altrimenti si leggono come tre movimenti separati;
+   · le classi vanno sugli elementi interessati, mai sul <body>.
+
+   I TEMPI DEL FINALE li scrive intro.js nelle proprietà --t-*: una sola
+   fonte. Quelli degli atti I–II sono i ritardi qui sotto, contati dal
+   momento in cui la scena riceve .parte.
+   ══════════════════════════════════════════════════════════════════ */
+
+:root {
+  --intro-fondo: radial-gradient(120% 120% at 50% 40%, #f4fbfa 0%, #e9f5ff 70%, #dfeefc 100%);
+  --intro-barra: #ffffff;      /* = --panel dell'intestazione: la banda ci si dissolve sopra */
+  --intro-traino: cubic-bezier(.65, 0, .2, 1);
+}
+
+@property --salita { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --d      { syntax: '<time>';   inherits: false; initial-value: 0ms; }
+@property --pop-delay { syntax: '<time>'; inherits: false; initial-value: 0ms; }
+
+/* ══════════════════════════════════════════════════════════════════
+   LA SCENA
+   ══════════════════════════════════════════════════════════════════ */
+.intro-scena {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--intro-fondo);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+  transition: opacity .5s ease, visibility 0s linear 0s;
+}
+.intro-scena.chiusa {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .5s ease, visibility 0s linear .5s;
+}
+
+.intro-credit {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  color: #a9bcc2;
+}
+
+/* la fascia del logo; spicchi in volo e onde ne sbordano */
+.intro-stage { width: min(62vw, 720px); aspect-ratio: 348 / 98; }
+.intro-logo  { width: 100%; height: 100%; display: block; overflow: visible; }
+
+/* tutto ruota e pulsa attorno al centro del globo (261.7, 228.1) */
+.intro-scena .globe,
+.intro-scena .seg,
+.intro-scena .ripple {
+  transform-box: view-box;
+  transform-origin: 261.7px 228.1px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ATTO I — la spirale di spicchi
+   Il volo lo calcola intro.js (Web Animations, 60 punti sulla spirale e
+   un solo easing: in CSS l'easing si ripete su ogni tratto fra due
+   keyframe e la spirale andava a scatti). Qui solo lo stato di partenza.
+   ══════════════════════════════════════════════════════════════════ */
+.intro-scena .seg { opacity: 0; }
+
+/* ══════════════════════════════════════════════════════════════════
+   ATTO II — pulse, onde, DICOM rivelato dall'onda, sottotitolo
+   ══════════════════════════════════════════════════════════════════ */
+.intro-scena.parte .globe { animation: introPulse .7s ease-out 2.6s both; }
+@keyframes introPulse {
+    0% { transform: scale(1); }
+   35% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+.intro-scena .ripple {
+  fill: none;
+  stroke: #00c6bd;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+}
+.intro-scena.parte .ripple { animation: introOnda 1.2s cubic-bezier(.2, .6, .35, 1) forwards; }
+.intro-scena.parte .ripple:nth-of-type(1) { animation-delay: 2.65s; }
+.intro-scena.parte .ripple:nth-of-type(2) { animation-delay: 2.85s; }
+@keyframes introOnda {
+    0% { opacity: .9; transform: scale(1); }
+  100% { opacity: 0;  transform: scale(6.5); }
+}
+
+/* il fronte dell'onda (maschera dal bordo morbido) scopre D-I-C e M */
+.intro-scena .reveal-disc { r: 0; }
+.intro-scena.parte .reveal-disc { animation: introScopri 1s cubic-bezier(.2, .6, .35, 1) 2.7s forwards; }
+@keyframes introScopri { from { r: 0; } to { r: 200px; } }
+
+/* dove passa l'onda la lettera nasce teal e si scurisce */
+.intro-scena .wordmark path { fill: #1a1a1a; }
+.intro-scena.parte .wordmark path { animation: introInchiostro 1.4s ease-out 2.7s both; }
+@keyframes introInchiostro { from { fill: #00b6cd; } to { fill: #1a1a1a; } }
+
+.intro-scena .subtitle { opacity: 0; }
+.intro-scena.parte .subtitle { animation: introAppare .5s ease-out 3.5s both; }
+@keyframes introAppare { from { opacity: 0; } to { opacity: 1; } }
+
+/* ══════════════════════════════════════════════════════════════════
+   ATTO III — il globo vola e si porta su la pagina
+
+   · volo → FLIP: si misura il globo dell'intro e quello dell'intestazione,
+     e si anima la differenza con una sola transform sulla fascia del logo;
+   · la banda risale dal basso e si ferma sul bordo dell'intestazione;
+   · la pagina sale agganciata al bordo della banda.
+   Tutti e tre partono nello stesso fotogramma, durano --t-volo e seguono
+   --intro-traino: sono un movimento solo.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* mentre il globo vola, il resto della scena si dissolve. Il fondo passa
+   a trasparente di colpo: sotto c'è la banda, dipinta uguale. */
+.intro-scena.in-uscita { background: transparent; pointer-events: none; }
+.intro-scena.in-uscita .wordmark,
+.intro-scena.in-uscita .intro-credit { opacity: 0; transition: opacity .3s ease; }
+/* il sottotitolo è tenuto visibile dal fill della sua animazione, che
+   vince su una transizione: serve un'animazione d'uscita */
+.intro-scena.in-uscita .subtitle { animation: introVia .3s ease forwards; }
+@keyframes introVia { from { opacity: 1; } to { opacity: 0; } }
+
+.intro-stage.in-volo {
+  transform-origin: 0 0;
+  transition: transform var(--t-volo, 800ms) var(--intro-traino);
+  will-change: transform;
+}
+/* all'atterraggio il globo volante sparisce di colpo: coincide al pixel con
+   quello dell'intestazione, e una dissolvenza ne mostrerebbe due */
+.intro-stage.atterrato { visibility: hidden; }
+
+/* ── la banda ─────────────────────────────────────────────────────
+   Dipinta come la scena; sotto, il colore dell'intestazione: quando lo
+   sfondo si spegne resta esattamente la tinta della barra. */
+.intro-velo {
+  position: fixed;
+  inset: 0;
+  z-index: 1900;
+  pointer-events: none;
+  background-color: var(--intro-barra);
+  opacity: 0;
+  visibility: hidden;
+}
+.intro-velo.armato { opacity: 1; visibility: visible; }
+.velo-sfondo { position: absolute; inset: 0; background: var(--intro-fondo); }
+/* riga luminosa sul bordo che sale, nei colori del globo */
+.velo-fronte {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #00dfa5, #00b6cd 55%, #00add6);
+  box-shadow: 0 0 22px 5px rgba(0, 198, 189, .38), 0 0 60px 16px rgba(0, 182, 205, .16);
+  opacity: 0;
+}
+
+/* sale spostandosi (transform), non ritagliandosi (clip-path): un
+   ritaglio che cambia ridisegna tutta la finestra ad ogni fotogramma */
+.intro-velo.in-corsa {
+  animation: veloSale var(--t-volo, 800ms) var(--intro-traino) forwards,
+             veloSvanisce var(--t-velo-via, 340ms) ease-out var(--t-volo, 800ms) forwards;
+  will-change: transform, opacity;
+}
+.intro-velo.in-corsa .velo-sfondo { animation: veloSfondoVia var(--t-volo, 800ms) var(--intro-traino) forwards; }
+.intro-velo.in-corsa .velo-fronte { animation: veloFronte var(--t-volo, 800ms) ease forwards; }
+@keyframes veloSale { to { transform: translate3d(0, calc(-1 * var(--velo-corsa, 90vh)), 0); } }
+@keyframes veloSvanisce { to { opacity: 0; } }
+/* lo sfondo scorre al contrario, così la sfumatura resta ferma nella
+   finestra, e si spegne salendo: arriva sulla barra già del suo colore */
+@keyframes veloSfondoVia { to { opacity: 0; transform: translate3d(0, var(--velo-corsa, 90vh), 0); } }
+@keyframes veloFronte { 0% { opacity: 0; } 10% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ── la pagina trascinata ─────────────────────────────────────────
+   Stessa durata e curva della banda: il suo bordo superiore resta sul
+   bordo della banda per tutta la corsa. La classe sta sulla pagina, non
+   sul body. */
+.intro-pagina.sale {
+  animation: paginaSale var(--t-volo, 800ms) var(--intro-traino) both;
+  will-change: transform;
+}
+@keyframes paginaSale { from { transform: translateY(var(--salita, 100vh)); } }
+
+/* ── intestazione: nascosta durante l'intro, poi a cascata ──────── */
+.app-header.intro-in-corso .da-cascata { opacity: 0; }
+.intro-bersaglio { opacity: 0; }
+.intro-bersaglio.atterrato { opacity: 1; }
+.pop-barra { animation: popBarra .46s cubic-bezier(.34, 1.35, .64, 1) var(--pop-delay, 0ms) both; }
+@keyframes popBarra {
+  from { opacity: 0; transform: scale(.8) translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── procedura e anteprima: arrivano trascinate, a cascata ────────
+   Molla di AnimatedList (Magic UI) come nell'Archivist; la scala parte
+   da .88 e non da 0: sono pannelli larghi, farli nascere da un punto
+   sembra un difetto di rendering. */
+.intro-pagina.intro-in-corso .pop-sezione { opacity: 0; }
+.pop-sezione.entra {
+  opacity: 0;
+  transform: scale(.88);
+  transform-origin: top center;
+  animation: popSezione .44s cubic-bezier(.34, 1.28, .64, 1) var(--pop-delay, 0ms) forwards;
+  will-change: transform, opacity;
+}
+@keyframes popSezione { to { opacity: 1; transform: scale(1); } }
+
+/* ══════════════════════════════════════════════════════════════════
+   ATTO IV — Grei si disegna, per ultimo
+   Lettera per lettera da sinistra: il contorno si scrive a penna
+   (pathLength=1 su ogni tracciato), poi l'inchiostro lo riempie
+   incrociando due opacità invece di cambiare lo spessore del tratto.
+   Lo spessore è in unità del viewBox di Grei (1000 per em).
+   ══════════════════════════════════════════════════════════════════ */
+.brand-grei.da-disegnare path {
+  fill-opacity: 0;
+  stroke: currentColor;
+  stroke-width: 40; /* ≈ 1,2 px con Grei alto 2,3em */
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.brand-grei.disegna path {
+  animation: greiTraccia var(--t-grei-tratto, 900ms) cubic-bezier(.55, .1, .35, 1) var(--d, 0ms) forwards,
+             greiInchiostro 420ms ease-out calc(var(--d, 0ms) + var(--t-grei-tratto, 900ms) * .7) forwards;
+}
+@keyframes greiTraccia    { to { stroke-dashoffset: 0; } }
+@keyframes greiInchiostro { to { fill-opacity: 1; stroke-opacity: 0; } }
+
+/* ══════════════════════════════════════════════════════════════════
+   Animazioni ridotte: intro.js non avvia nulla e toglie la scena
+   ══════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .intro-scena, .intro-velo { display: none; }
+  .intro-bersaglio { opacity: 1; }
+  .app-header.intro-in-corso .da-cascata,
+  .intro-pagina.intro-in-corso .pop-sezione { opacity: 1; }
+}
