@@ -50,35 +50,14 @@
   }
 
   /* ---------------------------------------------------------------
-     1. SPIRALE DI SPICCHI — si forma il globo (0.15 – 2.55 s)
+     1. SPIRALE DI SPICCHI — si forma il globo (0.15 – 2.5 s)
 
-     Ogni spicchio percorre una spirale logaritmica attorno al centro del
-     globo: angolo = -150° · ln(scala). Con l'origine al centro, rotate+scale
-     porta lo spicchio a distanza (scala × la sua) e lo gira: grande e lontano
-     = vicino all'utente, piccolo e al centro = al suo posto nel globo.
-     Partono uno dopo l'altro, così in ogni istante formano un braccio di
-     spirale: i primi già piccoli verso il globo, gli ultimi ancora grandi.
-     Più grande = più vicino = più sfocato (profondità di campo).
+     Il volo è calcolato in splash.js (Web Animations): in CSS l'easing si
+     applica a ogni tratto fra due keyframe, e con poche tappe la spirale
+     avanzava a scatti. Qui solo lo stato di partenza, invisibile, così gli
+     spicchi non lampeggiano al loro posto prima che lo script parta.
      --------------------------------------------------------------- */
-  .globe .seg { animation: seg-spiral 1.4s cubic-bezier(0.45, 0.05, 0.55, 1) both; }
-  .globe .seg:nth-child(1) { animation-delay: 0.15s; }
-  .globe .seg:nth-child(2) { animation-delay: 0.27s; }
-  .globe .seg:nth-child(3) { animation-delay: 0.39s; }
-  .globe .seg:nth-child(4) { animation-delay: 0.51s; }
-  .globe .seg:nth-child(5) { animation-delay: 0.63s; }
-  .globe .seg:nth-child(6) { animation-delay: 0.75s; }
-  .globe .seg:nth-child(7) { animation-delay: 0.87s; }
-  .globe .seg:nth-child(8) { animation-delay: 0.99s; }
-  .globe .seg:nth-child(9) { animation-delay: 1.11s; }
-  @keyframes seg-spiral {
-      0% { opacity: 0;   transform: rotate(-330deg) scale(9);   filter: blur(7px); }
-     12% { opacity: 0.85; }
-     25% { transform: rotate(-241deg) scale(5);   filter: blur(4px); }
-     45% { transform: rotate(-165deg) scale(3);   filter: blur(2px); }
-     65% { transform: rotate(-104deg) scale(2);   filter: blur(0.8px); }
-     82% { transform: rotate(-50deg)  scale(1.4); filter: blur(0); }
-    100% { opacity: 1;   transform: rotate(0deg)    scale(1);   filter: blur(0); }
-  }
+  .globe .seg { opacity: 0; }
 
   /* ---------------------------------------------------------------
      2. PULSE — il globo completo pulsa e manda due onde (2.6 s)
@@ -133,7 +112,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .ripple { display: none; }
-    .globe, .globe .seg, .subtitle { animation: none; opacity: 1; }
+    .globe, .globe .seg, .subtitle { animation: none; opacity: 1; } /* splash.js non anima */
     .reveal-disc { animation: none; r: 200px; }
     .wordmark path { animation: none; }
   }
