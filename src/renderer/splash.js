@@ -4,8 +4,10 @@
 // restrittiva di index.html: script-src 'self', niente 'unsafe-inline'.
 (function () {
   var btn = document.getElementById('import-btn');
-  // l'animazione del logo termina a ~2.5s: il pulsante compare subito dopo
-  setTimeout(function () { btn.classList.add('show'); }, 2600);
+  // spirale → globo → pulse → lettere → sottotitolo termina a ~3.6s; senza
+  // animazioni (prefers-reduced-motion) il logo è già completo
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  setTimeout(function () { btn.classList.add('show'); }, still ? 200 : 3700);
   btn.addEventListener('click', function () {
     btn.disabled = true;
     btn.querySelector('span').textContent = 'Avvio…';
