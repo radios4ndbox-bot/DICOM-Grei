@@ -39,84 +39,51 @@
   .stage { width: min(62vw, 720px); aspect-ratio: 348 / 98; }
   .logo  { width: 100%; height: 100%; display: block; }
 
-  /* La spirale e le onde escono dalla fascia del viewBox (alta 98): si
-     lasciano sbordare invece di allargare lo stage. */
+  /* Gli spicchi in volo e le onde escono dalla fascia del viewBox (alta 98):
+     si lasciano sbordare invece di allargare lo stage. */
   .logo { overflow: visible; }
 
   /* Tutto ruota e pulsa attorno al centro del globo (261.7, 228.1). */
-  .spiral, .ring, .core, .globe, .globe .seg, .ripple {
+  .globe, .globe .seg, .ripple {
     transform-box: view-box;
     transform-origin: 261.7px 228.1px;
   }
 
   /* ---------------------------------------------------------------
-     1. SPIRALE — anelli annidati che si avvitano (0 – 2.1 s)
+     1. SPIRALE DI SPICCHI — si forma il globo (0.15 – 2.55 s)
+
+     Ogni spicchio percorre una spirale logaritmica attorno al centro del
+     globo: angolo = -150° · ln(scala). Con l'origine al centro, rotate+scale
+     porta lo spicchio a distanza (scala × la sua) e lo gira: grande e lontano
+     = vicino all'utente, piccolo e al centro = al suo posto nel globo.
+     Partono uno dopo l'altro, così in ogni istante formano un braccio di
+     spirale: i primi già piccoli verso il globo, gli ultimi ancora grandi.
+     Più grande = più vicino = più sfocato (profondità di campo).
      --------------------------------------------------------------- */
-  .spiral { animation: spiral-life 2.1s cubic-bezier(0.3, 0.7, 0.4, 1) both; }
-  @keyframes spiral-life {
-      0% { opacity: 0; transform: scale(0.3); filter: blur(3px); }
-     20% { opacity: 1; filter: blur(0); }
-     70% { opacity: 1; transform: scale(1); }
-    100% { opacity: 0; transform: scale(0.55); }
-  }
-
-  .ring {
-    fill: none;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-dasharray: 30 20; /* due archi per anello, su pathLength=100 */
-    animation: twist 2.1s cubic-bezier(0.25, 1, 0.5, 1) both;
-  }
-  .ring:nth-child(odd)  { stroke: #00b6cd; }
-  .ring:nth-child(even) { stroke: #00d7ad; }
-  .ring:nth-child(1) { animation-delay: 0.00s; }
-  .ring:nth-child(2) { animation-delay: 0.06s; }
-  .ring:nth-child(3) { animation-delay: 0.12s; }
-  .ring:nth-child(4) { animation-delay: 0.18s; }
-  .ring:nth-child(5) { animation-delay: 0.24s; }
-  .ring:nth-child(6) { animation-delay: 0.30s; }
-  @keyframes twist {
-      0% { transform: rotate(0deg)   scale(0.8);  }
-     50% { transform: rotate(540deg) scale(1.05); }
-    100% { transform: rotate(900deg) scale(0.9);  }
-  }
-
-  .core {
-    fill: #00c6bd;
-    filter: drop-shadow(0 0 3px #00d2c8);
-    animation: core-pulse 0.7s ease-in-out infinite alternate;
-  }
-  @keyframes core-pulse {
-    from { transform: scale(1);   }
-    to   { transform: scale(1.6); }
-  }
-
-  /* ---------------------------------------------------------------
-     2. GLOBO — gli spicchi arrivano in vortice da davanti allo schermo:
-        enormi e sfocati, come vicinissimi all'utente, si restringono
-        girando fino a posarsi nel globo (1.0 – 2.2 s)
-     --------------------------------------------------------------- */
-  .globe .seg { animation: seg-spiral 1s cubic-bezier(0.35, 0, 0.2, 1) both; }
-  .globe .seg:nth-child(1) { animation-delay: 1.00s; }
-  .globe .seg:nth-child(2) { animation-delay: 1.03s; }
-  .globe .seg:nth-child(3) { animation-delay: 1.06s; }
-  .globe .seg:nth-child(4) { animation-delay: 1.09s; }
-  .globe .seg:nth-child(5) { animation-delay: 1.12s; }
-  .globe .seg:nth-child(6) { animation-delay: 1.15s; }
-  .globe .seg:nth-child(7) { animation-delay: 1.18s; }
-  .globe .seg:nth-child(8) { animation-delay: 1.21s; }
-  .globe .seg:nth-child(9) { animation-delay: 1.24s; }
+  .globe .seg { animation: seg-spiral 1.4s cubic-bezier(0.45, 0.05, 0.55, 1) both; }
+  .globe .seg:nth-child(1) { animation-delay: 0.15s; }
+  .globe .seg:nth-child(2) { animation-delay: 0.27s; }
+  .globe .seg:nth-child(3) { animation-delay: 0.39s; }
+  .globe .seg:nth-child(4) { animation-delay: 0.51s; }
+  .globe .seg:nth-child(5) { animation-delay: 0.63s; }
+  .globe .seg:nth-child(6) { animation-delay: 0.75s; }
+  .globe .seg:nth-child(7) { animation-delay: 0.87s; }
+  .globe .seg:nth-child(8) { animation-delay: 0.99s; }
+  .globe .seg:nth-child(9) { animation-delay: 1.11s; }
   @keyframes seg-spiral {
-      0% { opacity: 0;   transform: rotate(-300deg) scale(9); filter: blur(8px); }
-     25% { opacity: 0.8; }
-     70% { filter: blur(0); }
-    100% { opacity: 1;   transform: rotate(0deg)    scale(1); filter: blur(0); }
+      0% { opacity: 0;   transform: rotate(-330deg) scale(9);   filter: blur(7px); }
+     12% { opacity: 0.85; }
+     25% { transform: rotate(-241deg) scale(5);   filter: blur(4px); }
+     45% { transform: rotate(-165deg) scale(3);   filter: blur(2px); }
+     65% { transform: rotate(-104deg) scale(2);   filter: blur(0.8px); }
+     82% { transform: rotate(-50deg)  scale(1.4); filter: blur(0); }
+    100% { opacity: 1;   transform: rotate(0deg)    scale(1);   filter: blur(0); }
   }
 
   /* ---------------------------------------------------------------
-     3. PULSE — il globo pulsa e manda due onde (2.2 s)
+     2. PULSE — il globo completo pulsa e manda due onde (2.6 s)
      --------------------------------------------------------------- */
-  .globe { animation: globe-pulse 0.7s ease-out 2.2s both; }
+  .globe { animation: globe-pulse 0.7s ease-out 2.6s both; }
   @keyframes globe-pulse {
       0% { transform: scale(1);    }
      35% { transform: scale(1.12); }
@@ -131,24 +98,24 @@
     opacity: 0;
     animation: ripple 1.2s cubic-bezier(0.2, 0.6, 0.35, 1) forwards;
   }
-  .ripple:nth-of-type(1) { animation-delay: 2.25s; }
-  .ripple:nth-of-type(2) { animation-delay: 2.45s; }
+  .ripple:nth-of-type(1) { animation-delay: 2.65s; }
+  .ripple:nth-of-type(2) { animation-delay: 2.85s; }
   @keyframes ripple {
       0% { opacity: 0.9; transform: scale(1);   }
     100% { opacity: 0;   transform: scale(6.5); }
   }
 
   /* ---------------------------------------------------------------
-     4. LETTERE — DIC e M rivelate dal fronte dell'onda (2.3 – 3.3 s)
+     3. LETTERE — DIC e M rivelate dal fronte dell'onda (2.7 – 3.7 s)
      --------------------------------------------------------------- */
-  .reveal-disc { r: 0; animation: reveal 1s cubic-bezier(0.2, 0.6, 0.35, 1) 2.3s forwards; }
+  .reveal-disc { r: 0; animation: reveal 1s cubic-bezier(0.2, 0.6, 0.35, 1) 2.7s forwards; }
   @keyframes reveal {
     from { r: 0;     }
     to   { r: 200px; }
   }
 
   /* dove passa l'onda la lettera nasce teal e si scurisce */
-  .wordmark path { fill: #1a1a1a; animation: ink 1.4s ease-out 2.3s both; }
+  .wordmark path { fill: #1a1a1a; animation: ink 1.4s ease-out 2.7s both; }
   @keyframes ink {
     from { fill: #00b6cd; }
     to   { fill: #1a1a1a; }
@@ -157,7 +124,7 @@
   /* sottotitolo: dissolvenza, per ultimo */
   .subtitle {
     opacity: 0;
-    animation: fade-in 0.5s ease-out 3.1s both;
+    animation: fade-in 0.5s ease-out 3.5s both;
   }
   @keyframes fade-in {
     from { opacity: 0; }
@@ -165,7 +132,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .spiral, .ripple { display: none; }
+    .ripple { display: none; }
     .globe, .globe .seg, .subtitle { animation: none; opacity: 1; }
     .reveal-disc { animation: none; r: 200px; }
     .wordmark path { animation: none; }
@@ -187,17 +154,6 @@
           <circle class="reveal-disc" cx="261.7" cy="228.1" fill="url(#soft-disc)" />
         </mask>
       </defs>
-
-      <!-- ===== spirale d'ingresso: si stringe nel globo ===== -->
-      <g class="spiral" aria-hidden="true">
-        <circle class="ring" cx="261.7" cy="228.1" r="46" pathLength="100" />
-        <circle class="ring" cx="261.7" cy="228.1" r="39" pathLength="100" />
-        <circle class="ring" cx="261.7" cy="228.1" r="32" pathLength="100" />
-        <circle class="ring" cx="261.7" cy="228.1" r="25" pathLength="100" />
-        <circle class="ring" cx="261.7" cy="228.1" r="18" pathLength="100" />
-        <circle class="ring" cx="261.7" cy="228.1" r="11" pathLength="100" />
-        <circle class="core" cx="261.7" cy="228.1" r="2.5" />
-      </g>
 
       <!-- ===== onde del pulse ===== -->
       <circle class="ripple" cx="261.7" cy="228.1" r="29" aria-hidden="true" />
