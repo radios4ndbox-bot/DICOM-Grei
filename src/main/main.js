@@ -85,7 +85,7 @@ function createSplash() {
     center: true,
     show: true,
     backgroundColor: APP_BG,
-    title: 'DICOM Import Tool',
+    title: 'DICOM Grei',
     webPreferences: {
       preload: path.join(__dirname, 'splashPreload.js'),
       contextIsolation: true,
@@ -152,7 +152,7 @@ function createMain() {
     ...MAIN_BOUNDS,
     show: false,
     backgroundColor: APP_BG,
-    title: 'DICOM Import Tool',
+    title: 'DICOM Grei',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -347,7 +347,7 @@ ipcMain.handle('run-import', async (_e, opts) => {
   const startedAt = Date.now();
   const kind = session.prepared ? session.prepared.kind : '';
   log.section('IMPORTAZIONE');
-  log.line(`DICOM Import Tool ${app.getVersion()} · ${new Date().toLocaleString('it-IT')}`);
+  log.line(`DICOM Grei ${app.getVersion()} · ${new Date().toLocaleString('it-IT')}`);
   log.line(
     `Supporto: ${kind === 'optical' ? (iso ? 'ISO montata' : 'CD/DVD') : kind === 'folder' ? 'ZIP estratto' : 'USB'}` +
       ` · tipo ${plan.type}${ov ? ' (forzato)' : ''} · pattern ${plan.pattern} · strategia ${plan.strategy}`
