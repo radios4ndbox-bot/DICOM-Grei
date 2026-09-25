@@ -1,12 +1,12 @@
 'use strict';
 
-// Pool di thread di libuv, prima di qualsiasi I/O asincrono: libuv lo legge
-// una volta sola, al primo uso. Una lettura ferma su un settore di un DVD
-// rovinato occupa un thread finché Windows non rinuncia al settore, e con i 4
-// thread predefiniti bastano poche letture ferme a bloccare tutto l'I/O
-// dell'app. copyStage ha comunque una contropressione che non dipende da questo
-// valore (in Electron impostarlo qui è efficace ma non garantito).
-if (!process.env.UV_THREADPOOL_SIZE) process.env.UV_THREADPOOL_SIZE = '16';
+// UV_THREADPOOL_SIZE NON si imposta qui. Misurato su Windows 11 (25/09/2026,
+// pbkdf2 su 4 e 8 task): assegnato da codice, in Electron come in Node, il pool
+// resta a 4; ha effetto solo se la variabile c'è già nell'ambiente all'avvio.
+// Peggio: copyStage legge la variabile per dimensionare la contropressione, e
+// con "16" finto tollerava 14 letture abbandonate su 4 thread veri, cioè
+// proprio il blocco dei DVD rovinati che la contropressione deve evitare.
+// Senza assegnazione, copyStage vede il pool com'è davvero.
 
 const { app, BrowserWindow, clipboard, ipcMain } = require('electron');
 const fs = require('fs');

@@ -41,6 +41,8 @@ const SECOND_PASS_BUDGET_MS = 3 * 60 * 1000;
  */
 let abandoned = 0;
 
+// Vale solo se la variabile c'era già all'avvio del processo: assegnata da
+// codice non cambia il pool (vedi main.js), e qui darebbe un numero falso.
 function poolSize() {
   return Math.max(4, parseInt(process.env.UV_THREADPOOL_SIZE, 10) || 4);
 }

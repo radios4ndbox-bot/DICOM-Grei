@@ -111,11 +111,15 @@ in coda senza partire, scadevano, e finivano fra i "saltati".
 
 Ora:
 
-1. il pool è portato a 16 thread all'avvio;
+1. il pool resta quello di default (4). Portarlo a 16 da codice non funziona:
+   misurato il 25/09/2026 su Windows 11, assegnare `UV_THREADPOOL_SIZE` da
+   `main.js` non cambia il pool, né in Electron né in Node, e dava alla
+   contropressione un numero falso (credeva di avere 16 thread). Ha effetto
+   solo se la variabile è già nell'ambiente quando parte l'app;
 2. soprattutto, **non si avvia una lettura se non c'è un thread libero**: la
-   copia aspetta che una lettura abbandonata torni indietro. Questo vale anche se
-   il punto 1 non attecchisse. Sul caso realistico (il settore alla fine torna
-   errore) si passa da 0/12 a 12/12 file buoni anche con il pool di default;
+   copia aspetta che una lettura abbandonata torni indietro. Sul caso
+   realistico (il settore alla fine torna errore) si passa da 0/12 a 12/12 file
+   buoni con il pool di default;
 3. i file scaduti vengono **ritentati una volta, in sequenza**, a fine copia:
    quelli rimasti in coda dietro un settore rovinato di solito passano. Ci si
    ferma dopo 8 scadenze di fila o 3 minuti;
