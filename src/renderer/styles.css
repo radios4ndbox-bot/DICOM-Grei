@@ -29,15 +29,22 @@ body {
   background: var(--panel);
 }
 .app-header h1 { font-size: 16px; margin: 0; flex: 1; }
-/* "Grei" in corsivo calligrafico. Gabriola è di serie su Windows 10/11:
-   nessun file di font da includere né da scaricare dietro il proxy. */
-.brand { display: flex; align-items: baseline; gap: 0.3em; letter-spacing: 0.04em; }
+/* "Grei" in corsivo calligrafico: Great Vibes, incluso nell'app (niente rete
+   dietro il proxy). Gabriola, di serie su Windows, se il file mancasse. */
+@font-face {
+  font-family: "Great Vibes";
+  src: url("assets/fonts/GreatVibes-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+.brand { display: flex; align-items: baseline; gap: 0.35em; letter-spacing: 0.04em; }
 .brand-script {
-  font-family: "Gabriola", "Segoe Script", cursive;
-  font-size: 2em;
+  font-family: "Great Vibes", "Gabriola", cursive;
+  font-size: 1.9em;
   font-weight: 400;
   line-height: 0.6;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   color: var(--teal-d);
 }
 .logo-globe { width: 24px; height: 24px; display: block; }
