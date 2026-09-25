@@ -61,6 +61,8 @@
         <div class="kv"><span>Tipo rilevato</span><strong id="clf-type">—</strong></div>
         <div class="kv"><span>Scan pattern</span><code id="clf-pattern">—</code></div>
         <div class="kv"><span>File totali</span><strong id="clf-total">—</strong></div>
+        <div class="kv"><span>Dimensione</span><strong id="clf-size">—</strong></div>
+        <div class="kv"><span>Invio stimato</span><strong id="clf-eta">—</strong></div>
         <div class="kv hidden" id="clf-junk-row"><span>Scartati (non immagini)</span><strong id="clf-junk">0</strong></div>
         <p id="clf-reasoning" class="muted"></p>
         <ul id="clf-tree" class="tree"></ul>
@@ -79,9 +81,9 @@
       <div class="row">
         <label for="send-mode">Invio</label>
         <select id="send-mode">
-          <option value="normal">Normale · poche associazioni in parallelo</option>
-          <option value="turbo">Turbo · molte associazioni in parallelo</option>
           <option value="single" selected>Sequenziale · una sola associazione (come da CMD)</option>
+          <option value="normal">Parallelo · poche associazioni insieme</option>
+          <option value="turbo">Turbo · molte associazioni insieme</option>
         </select>
       </div>
       <div class="row">
@@ -141,6 +143,10 @@
         <div class="kv"><span>Falliti</span><strong id="sum-err">0</strong></div>
         <div class="kv"><span>Saltati in copia</span><strong id="sum-skip">0</strong></div>
         <div class="kv"><span>Associazione</span><strong id="sum-assoc">—</strong></div>
+        <div class="kv"><span>Copia in locale</span><strong id="sum-copy">—</strong></div>
+        <div class="kv"><span>Invio a PACS</span><strong id="sum-send">—</strong></div>
+        <div class="kv"><span>Totale</span><strong id="sum-total">—</strong></div>
+        <p id="sum-log" class="muted mono"></p>
         <p id="sum-note" class="muted"></p>
       </div>
 

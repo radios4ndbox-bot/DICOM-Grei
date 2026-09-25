@@ -80,6 +80,22 @@ function formatEta(sec) {
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
 }
 
+function formatMB(bytes) {
+  if (bytes == null || !isFinite(bytes)) return '—';
+  const mb = bytes / 1048576;
+  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+}
+
+// Durata · MB · MB/s: le stesse grandezze del report sul campo, per poter
+// mettere a confronto l'app con un'importazione fatta a mano.
+function phaseLine(sec, bytes) {
+  if (sec == null) return '—';
+  const bits = [formatEta(sec) || '0 s'];
+  if (bytes) bits.push(formatMB(bytes));
+  if (bytes && sec > 0) bits.push(`${(bytes / 1048576 / sec).toFixed(2)} MB/s`);
+  return bits.join(' · ');
+}
+
 // ---------------------------------------------------------------- popup
 
 function showModal(title, text) {
@@ -528,6 +544,11 @@ function renderStudy() {
   $('clf-type').textContent = p.type;
   $('clf-pattern').textContent = p.pattern;
   $('clf-total').textContent = p.totalFiles;
+  $('clf-size').textContent =
+    p.totalBytes == null ? '—' : (p.bytesEstimated ? 'circa ' : '') + formatMB(p.totalBytes);
+  // solo l'invio: è la fase stabile. La copia dipende dal supporto (nel report
+  // sul campo da 1,5 a 9 MB/s) e una stima a priori sarebbe solo un numero.
+  $('clf-eta').textContent = p.sendEtaSec ? `circa ${formatEta(p.sendEtaSec)} (una associazione)` : '—';
   // i file non-immagine (visualizzatore, DICOMDIR, autorun) non vengono copiati:
   // dirlo evita la domanda "perche' il conteggio non torna col contenuto del CD"
   $('clf-junk-row').classList.toggle('hidden', !p.skippedJunk);
@@ -547,14 +568,15 @@ function renderStudy() {
 // lancio a mano da cmd, ed è la prima cosa da provare se il PACS rifiuta le
 // associazioni in più.
 const SEND_MODE_NOTE = {
-  normal: 'Poche associazioni DICOM in parallelo. Buon compromesso fra velocità e carico sul PACS.',
+  normal:
+    'Poche associazioni DICOM insieme: più veloce se il PACS le accetta tutte. ' +
+    'Se compare «Association Request Failed» tornare a Sequenziale.',
   turbo:
     'Molte associazioni in parallelo: molto più veloce sui supporti grandi, carica di più PC e PACS. ' +
     'Se compare «Association Request Failed» il PACS ne accetta meno: scendere di modalità.',
   single:
-    'Una sola associazione, staging non spezzato: identico a lanciare storescu a mano da cmd. ' +
-    'Da usare se il PACS rifiuta le associazioni contemporanee. Più lento, ma è il comportamento ' +
-    'che in cmd non perde mai un\'associazione.',
+    'Una sola associazione, staging non spezzato: lo stesso comando che da cmd non perde ' +
+    'un\'associazione. Verso questo PACS tiene circa 3 MB/s.',
 };
 
 function updateSendModeNote() {
@@ -622,14 +644,25 @@ window.api.onProgress((d) => {
       ? `Estrazione archivio: ${d.done}/${d.total} file…`
       : 'Estrazione archivio…';
   } else if (d.phase === 'copy') {
-    setProgress(0, d.total ? (d.copied + d.skipped) / d.total : 0, {
-      detail: `${d.copied}/${d.total} file${d.current ? ' · ' + d.current : ''}`,
+    const frac = d.totalBytes ? d.bytes / d.totalBytes : d.total ? (d.copied + d.skipped) / d.total : 0;
+    const eta = formatEta(d.etaSec);
+    setProgress(0, frac, {
+      detail:
+        `${d.copied}/${d.total} file` +
+        (d.bytes ? ` · ${formatMB(d.bytes)}` : '') +
+        (d.mbps ? ` · ${d.mbps.toFixed(1)} MB/s` : '') +
+        (d.current ? ' · ' + d.current : ''),
+      eta: eta ? `Copia: circa ${eta} rimanenti` : '',
     });
     $('copy-skipped').textContent = d.skipped ? `${d.skipped} saltati` : '';
   } else if (d.phase === 'send') {
     const eta = formatEta(d.etaSec);
-    setProgress(1, d.total ? d.sent / d.total : 0, {
-      detail: `${d.sent}/${d.total} file${d.rate ? ` · ${d.rate}/s` : ''}`,
+    const frac = d.totalBytes ? d.bytes / d.totalBytes : d.total ? d.sent / d.total : 0;
+    setProgress(1, frac, {
+      detail:
+        `${d.sent}/${d.total} file` +
+        (d.totalBytes ? ` · ${formatMB(d.bytes)} di ${formatMB(d.totalBytes)}` : '') +
+        (d.mbps ? ` · ${d.mbps.toFixed(1)} MB/s` : ''),
       eta: eta ? `Tempo stimato rimanente: ${eta}` : '',
     });
     $('send-ok').textContent = 'Success: ' + d.success;
@@ -697,6 +730,12 @@ function onImportDone(result) {
     });
   }
 
+  const t = result.timing || {};
+  $('sum-copy').textContent = phaseLine(t.copySec, t.copyBytes);
+  $('sum-send').textContent = phaseLine(t.sendSec, t.sendBytes);
+  $('sum-total').textContent = t.totalSec != null ? formatEta(t.totalSec) : '—';
+  $('sum-log').textContent = result.logPath ? 'Log: ' + result.logPath : '';
+
   $('sum-ok').textContent = s.success || 0;
   $('sum-err').textContent = s.failed || 0;
   $('sum-skip').textContent = result.copy ? result.copy.skipped : 0;
@@ -725,6 +764,12 @@ function onImportDone(result) {
   }
   if (s.failedFiles && s.failedFiles.length) {
     notes.push(`${s.failedFiles.length} file non recuperabili (formato o SOP class non accettata dal PACS).`);
+  }
+  if (result.copy && result.copy.recovered) {
+    notes.push(`${result.copy.recovered} file recuperati al secondo tentativo di lettura.`);
+  }
+  if (result.copy && result.copy.driveStuck) {
+    notes.push('Il lettore ha smesso di rispondere: inviati solo i file già copiati.');
   }
   if (result.copy && result.copy.skipped) {
     notes.push(`${result.copy.skipped} file non copiati (timeout/lettura): invio parziale.`);
@@ -799,6 +844,8 @@ $('btn-restart').addEventListener('click', () => {
   $('btn-stop').classList.add('hidden');
   $('btn-to-study').disabled = true;
   showStep('media');
+  // il supporto nuovo è di solito già nel lettore: si rileva subito
+  detect();
 });
 
 // il badge in alto deve riflettere le impostazioni salvate, non il valore fisso nell'HTML
@@ -810,3 +857,7 @@ window.api
   .catch(() => {});
 
 showStep('media');
+
+// Rilevamento automatico al lancio: la finestra si carica nascosta dietro la
+// splash, quindi quando l'operatore la vede i supporti sono già elencati.
+detect();

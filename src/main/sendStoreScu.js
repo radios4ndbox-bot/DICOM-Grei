@@ -82,11 +82,29 @@ function commandLine(args) {
 }
 
 /**
+ * Controlli che non dipendono dallo staging: si fanno PRIMA della copia.
+ * Scoprire che storescu.exe manca dopo sette minuti di lettura del CD è il
+ * modo peggiore di scoprirlo. Il pattern non arriva più a storescu (vedi
+ * dirArgs) ma decide ancora cosa finisce in staging: resta verificato.
+ */
+function preflightSend(pattern) {
+  if (!fs.existsSync(config.STORESCU)) {
+    throw new Error(
+      `storescu.exe non trovato in: ${config.STORESCU} — verifica l'installazione di dcmtk.`
+    );
+  }
+  if (!ALLOWED_PATTERNS.includes(pattern)) {
+    throw new Error(`scan-pattern non consentito: "${pattern}". Ammessi solo "MP*" o "*.dcm".`);
+  }
+}
+
+/**
  * File presenti in una cartella di staging.
  *
  * Sono TUTTI quelli che storescu prendera' in carico, perche' gli si passa la
  * cartella senza filtro e in staging finisce solo cio' che va inviato (ci
- * pensa copyStage, piu' la rimozione dei temporanei abbandonati).
+ * pensa copyStage; i file ancora in copia stanno in una sottocartella, e
+ * storescu senza +r non scende nelle sottocartelle).
  *
  * Prima qui si rifiltrava per pattern, e le due viste non combaciavano: con
  * "*.dcm" il filtro nostro trovava i file mentre storescu non ne trovava
@@ -403,6 +421,12 @@ function sendStoreScu(opts, emit) {
     const prev = outcomes.get(key);
     if (prev === undefined) {
       ok ? state.success++ : state.failed++;
+      // file non riconosciuto (percorso assente nella riga): media dei noti
+      doneBytes += sizes.has(key)
+        ? sizes.get(key)
+        : sizes.size
+        ? Math.round(totalBytes / sizes.size)
+        : 0;
     } else if (prev !== ok) {
       if (ok) {
         state.success++;
@@ -415,12 +439,25 @@ function sendStoreScu(opts, emit) {
     outcomes.set(key, ok);
   };
 
+  // Byte per file, dallo staging. L'ETA si fa sui byte e non sul numero di
+  // file: dal report sul campo l'invio su una sola associazione tiene ~3 MB/s
+  // costanti (3,2 e 2,9 MB/s su due CD), mentre in file al secondo va da 15,2 a
+  // 8,7 a seconda della dimensione media delle immagini. Stimata a file, la
+  // seconda sessione sarebbe uscita sbagliata del 43%; a byte, del 10%.
+  const sizes = new Map(); // key -> byte
+  let totalBytes = 0;
+  let doneBytes = 0;
+
   const emitProgress = () => {
     const done = state.success + state.failed;
     const elapsed = (Date.now() - startedAt) / 1000;
-    // ETA solo dopo qualche file: prima la stima è rumore
-    const rate = done >= 5 && elapsed > 0 ? done / elapsed : 0;
-    const etaSec = rate > 0 && state.total > done ? Math.round((state.total - done) / rate) : null;
+    // stima solo dopo qualche file: prima misura l'apertura dell'associazione
+    const warm = done >= 5 && elapsed >= 3;
+    const byteRate = warm && elapsed > 0 ? doneBytes / elapsed : 0;
+    const fileRate = warm && elapsed > 0 ? done / elapsed : 0;
+    let etaSec = null;
+    if (byteRate > 0 && totalBytes > doneBytes) etaSec = Math.round((totalBytes - doneBytes) / byteRate);
+    else if (fileRate > 0 && state.total > done) etaSec = Math.round((state.total - done) / fileRate);
     emit({
       type: 'progress',
       data: {
@@ -429,8 +466,11 @@ function sendStoreScu(opts, emit) {
         success: state.success,
         failed: state.failed,
         total: state.total,
+        bytes: doneBytes,
+        totalBytes,
         etaSec,
-        rate: Math.round(rate * 10) / 10,
+        rate: Math.round(fileRate * 10) / 10,
+        mbps: Math.round((byteRate / 1048576) * 100) / 100,
         stalled,
       },
     });
@@ -537,14 +577,7 @@ function sendStoreScu(opts, emit) {
   };
 
   const run = async () => {
-    if (!fs.existsSync(config.STORESCU)) {
-      throw new Error(
-        `storescu.exe non trovato in: ${config.STORESCU} — verifica l'installazione di dcmtk.`
-      );
-    }
-    if (!ALLOWED_PATTERNS.includes(pattern)) {
-      throw new Error(`scan-pattern non consentito: "${pattern}". Ammessi solo "MP*" o "*.dcm".`);
-    }
+    preflightSend(pattern);
     if (!partDirs || partDirs.length === 0) throw new Error('Nessuna cartella di staging da inviare.');
     for (const d of partDirs) {
       if (!insideStaging(d)) throw new Error(`Cartella fuori dallo staging: ${d}`);
@@ -555,7 +588,21 @@ function sendStoreScu(opts, emit) {
     // contenuto del supporto ma si invia solo ciò che combacia con "MP*",
     // quindi il totale da copiare sarebbe irraggiungibile e l'ETA mai risolta.
     let inviabili = 0;
-    for (const d of partDirs) inviabili += (await stagedFiles(d)).length;
+    for (const d of partDirs) {
+      const list = await stagedFiles(d);
+      inviabili += list.length;
+      // file locali: 64 stat alla volta costano pochi millisecondi anche su migliaia
+      for (let i = 0; i < list.length; i += 64) {
+        const part = list.slice(i, i + 64);
+        const st = await Promise.all(part.map((f) => fs.promises.stat(f).catch(() => null)));
+        part.forEach((f, j) => {
+          if (st[j]) {
+            sizes.set(norm(f), st[j].size);
+            totalBytes += st[j].size;
+          }
+        });
+      }
+    }
     if (inviabili === 0) {
       // meglio dirlo subito che lasciar girare storescu a vuoto e chiudere con
       // "0 inviati" senza spiegazione
@@ -571,7 +618,7 @@ function sendStoreScu(opts, emit) {
       type: 'log',
       line:
         `> ${partDirs.length} associazione/i in parallelo verso ${config.PACS_IP}:${config.PACS_PORT}` +
-        ` · ${state.total} file da inviare`,
+        ` · ${state.total} file da inviare (${(totalBytes / 1048576).toFixed(1)} MB)`,
     });
     emitProgress();
 
@@ -673,6 +720,8 @@ function sendStoreScu(opts, emit) {
     state.failedFiles = [...retryQueue.values(), ...permanent.values()];
     state.permanentFailures = [...permanent.values()];
     state.elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+    state.bytes = doneBytes;
+    state.totalBytes = totalBytes;
     emitProgress();
     return state;
   };
@@ -711,5 +760,6 @@ module.exports = {
   insideStaging,
   commandLine,
   quoteForCmd,
+  preflightSend,
   lastSentCommand: () => lastCommand,
 };

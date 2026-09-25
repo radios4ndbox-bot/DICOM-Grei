@@ -47,6 +47,10 @@ module.exports = {
   // Timeout lettura per singolo file (DVD danneggiati)
   FILE_COPY_TIMEOUT_MS: 15000,
 
+  // Se per questo tempo nessuna lettura abbandonata torna indietro, il lettore
+  // è considerato bloccato: si smette di leggere e si invia quanto già copiato.
+  COPY_DRIVE_STUCK_MS: 60000,
+
   // ---- Riga di comando di storescu -------------------------------------
   // Sintassi di trasferimento proposte: 'lossless' | 'uncompr' | 'little' | 'implicit'.
   //
@@ -88,6 +92,12 @@ module.exports = {
   // Attesa crescente fra un ritentativo e il successivo: se il PACS è occupato
   // serve dargli tempo, non martellarlo.
   RETRY_BACKOFF_MS: [10000, 30000, 60000],
+
+  // Velocità di invio attesa con UNA associazione, per la stima mostrata prima
+  // di partire. Misurata sul campo verso questo Synapse: 3,2 e 2,9 MB/s su due
+  // CD da ~650 MB (report del 25/09/2026). In MB/s e non in file/s perché è la
+  // grandezza stabile: in file/s le stesse due sessioni vanno da 15,2 a 8,7.
+  SEND_MBPS_ESTIMATE: 3,
 
   // Nessuna risposta dal PACS per questo tempo => avviso all'operatore
   STALL_WARN_MS: 45000,

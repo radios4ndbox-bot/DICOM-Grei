@@ -1,5 +1,13 @@
 'use strict';
 
+// Pool di thread di libuv, prima di qualsiasi I/O asincrono: libuv lo legge
+// una volta sola, al primo uso. Una lettura ferma su un settore di un DVD
+// rovinato occupa un thread finché Windows non rinuncia al settore, e con i 4
+// thread predefiniti bastano poche letture ferme a bloccare tutto l'I/O
+// dell'app. copyStage ha comunque una contropressione che non dipende da questo
+// valore (in Electron impostarlo qui è efficace ma non garantito).
+if (!process.env.UV_THREADPOOL_SIZE) process.env.UV_THREADPOOL_SIZE = '16';
+
 const { app, BrowserWindow, clipboard, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -9,9 +17,10 @@ const { detectMedia } = require('./detectMedia');
 const { prepareSource } = require('./isoZip');
 const { scanMedia } = require('./scan');
 const { stageFiles } = require('./copyStage');
-const { sendStoreScu, lastSentCommand } = require('./sendStoreScu');
+const { sendStoreScu, lastSentCommand, preflightSend } = require('./sendStoreScu');
 const { cleanup, dailyPurge } = require('./cleanup');
 const { startPreview } = require('./preview');
+const { openImportLog, formatBytes, formatDuration, mbps } = require('./importLog');
 
 const config = require('./config');
 const settings = require('./settings');
@@ -196,7 +205,10 @@ ipcMain.handle('classify', async () => {
   const { plan, study, files } = await scanMedia(session.prepared.sourcePath);
   session.plan = plan;
   session.files = files;
-  return { ...plan, study };
+  // stima dell'invio con una associazione, dalla velocità misurata sul campo
+  const sendEtaSec =
+    plan.totalBytes > 0 ? Math.round(plan.totalBytes / (config.SEND_MBPS_ESTIMATE * 1048576)) : null;
+  return { ...plan, study, sendEtaSec };
 });
 
 /**
@@ -280,10 +292,6 @@ ipcMain.handle('run-import', async (_e, opts) => {
   if (!session.plan) throw new Error('Nessuna classificazione disponibile.');
   if (session.busy) throw new Error('Importazione già in corso.');
 
-  const ch = uiChannel();
-  const emitProgress = ch.progress;
-  const emitLog = ch.log;
-
   // Dal renderer prendiamo SOLO l'eventuale tipo forzato dalla tendina.
   // dataRoot/subfolders restano quelli calcolati qui: il renderer non può
   // far leggere a stageFiles una cartella qualsiasi del PC.
@@ -291,19 +299,56 @@ ipcMain.handle('run-import', async (_e, opts) => {
   const ov = TYPE_OVERRIDE[forced];
   const plan = ov ? { ...session.plan, type: forced, ...ov } : session.plan;
 
+  // Prima di copiare: se storescu manca lo si deve sapere ORA, non dopo
+  // minuti di lettura del CD (nel report sul campo la copia da sola arriva a 7
+  // minuti). Stesso discorso per un pattern non ammesso.
+  preflightSend(plan.pattern);
+
   const iso = (session.prepared && session.prepared.iso) || null;
 
   // Quante associazioni DICOM in parallelo.
   //
   // 'single' ne usa UNA sola: lo staging non viene spezzato in part_NN e parte
-  // un solo storescu con "+sd <staging>", cioè esattamente quello che si lancia
-  // a mano da cmd. È la modalità da scegliere se il PACS limita le associazioni
-  // contemporanee per AE title: oltre quel limite le richieste in più vengono
-  // rifiutate, e sono quelle che l'operatore vede "perdersi".
+  // un solo storescu con "+sd <staging>", cioè esattamente il comando del
+  // report sul campo, quello che da cmd non perde un'associazione. È il
+  // default. 'normal'/'turbo' aprono più associazioni: più veloci SE il PACS
+  // le accetta tutte, ma oltre il suo limite per AE title le richieste in più
+  // vengono rifiutate.
   const mode = opts && typeof opts.mode === 'string' ? opts.mode : 'single';
   const workers =
-    mode === 'single' ? 1 : mode === 'turbo' ? config.WORKERS_TURBO : config.WORKERS_NORMAL;
+    mode === 'turbo' ? config.WORKERS_TURBO : mode === 'normal' ? config.WORKERS_NORMAL : 1;
   const turbo = mode === 'turbo';
+
+  // Log su file (Desktop), scritto mentre si procede. Ogni riga che va nella
+  // finestra va anche lì; la finestra ne tiene 400, il file tutte.
+  const log = openImportLog();
+  const ch = uiChannel();
+  const emitProgress = ch.progress;
+  const emitLog = (line) => {
+    ch.log(line);
+    log.line(line);
+  };
+
+  const startedAt = Date.now();
+  const kind = session.prepared ? session.prepared.kind : '';
+  log.section('IMPORTAZIONE');
+  log.line(`DICOM Import Tool ${app.getVersion()} · ${new Date().toLocaleString('it-IT')}`);
+  log.line(
+    `Supporto: ${kind === 'optical' ? (iso ? 'ISO montata' : 'CD/DVD') : kind === 'folder' ? 'ZIP estratto' : 'USB'}` +
+      ` · tipo ${plan.type}${ov ? ' (forzato)' : ''} · pattern ${plan.pattern} · strategia ${plan.strategy}`
+  );
+  log.line(
+    `Da copiare: ${plan.totalFiles} file · ${formatBytes(plan.totalBytes)}` +
+      `${plan.bytesEstimated ? ' (stima)' : ''}` +
+      `${plan.skippedJunk ? ` · ${plan.skippedJunk} file non-immagine esclusi` : ''}`
+  );
+  log.line(`PACS: ${config.DEST_AET}@${config.PACS_IP}:${config.PACS_PORT} · AET sorgente ${config.SRC_AET}`);
+  log.line(
+    `Invio: ${mode === 'single' ? 'sequenziale' : mode} · ` +
+      `${workers} ${workers === 1 ? 'associazione' : 'associazioni'}`
+  );
+  log.line(`storescu: ${config.STORESCU}`);
+  if (log.path) emitLog(`> log dell'importazione: ${log.path}`);
 
   // `busy` copre TUTTA l'importazione, copia compresa. `session.send` da solo
   // non basta: viene valorizzato solo dopo lo staging, e la copia di migliaia
@@ -313,6 +358,27 @@ ipcMain.handle('run-import', async (_e, opts) => {
   const preview = startPreviewChannel();
   session.preview = preview;
 
+  const timing = { copySec: null, sendSec: null, totalSec: null, copyBytes: 0, sendBytes: 0 };
+  const finish = (result) => {
+    timing.totalSec = Math.round((Date.now() - startedAt) / 100) / 10;
+    log.section('RIEPILOGO');
+    log.line(`Copia   ${formatDuration(timing.copySec)} · ${formatBytes(timing.copyBytes)} · ${mbps(timing.copyBytes, timing.copySec)}`);
+    if (timing.sendSec != null) {
+      log.line(`Invio   ${formatDuration(timing.sendSec)} · ${formatBytes(timing.sendBytes)} · ${mbps(timing.sendBytes, timing.sendSec)}`);
+    }
+    log.line(`Totale  ${formatDuration(timing.totalSec)}`);
+    if (result.interrupted) log.line('Esito: INTERROTTA, staging azzerato');
+    else if (result.error) log.line('Esito: ERRORE — ' + result.error);
+    else if (result.send) {
+      const s = result.send;
+      log.line(
+        `Esito: ${s.success} inviati, ${s.failed} falliti` +
+          `${s.retried ? `, ${s.retried} ritentati` : ''}${s.gaveUp ? ', ritentativi interrotti (PACS muto)' : ''}`
+      );
+    }
+    return { ...result, timing, logPath: log.path };
+  };
+
   try {
     // Da lettore ottico le letture parallele fanno solo saltare la testina: lì
     // poche copie contemporanee. Da USB, ZIP estratto o ISO (file su disco
@@ -321,23 +387,34 @@ ipcMain.handle('run-import', async (_e, opts) => {
     const concurrency = optical ? config.COPY_CONCURRENCY_OPTICAL : config.COPY_CONCURRENCY_FAST;
     session.cancelRequested = false;
 
+    log.section('COPIA IN LOCALE');
+    log.line(`${concurrency} letture contemporanee · timeout ${config.FILE_COPY_TIMEOUT_MS / 1000} s per file`);
     const copy = await stageFiles(plan, emitProgress, workers, {
       concurrency,
       isCancelled: () => session.cancelRequested,
       files: session.files,
+      totalBytes: plan.totalBytes,
       onStaged: preview ? (dest) => preview.file(dest) : null,
+      onLog: emitLog,
     });
+    timing.copySec = copy.elapsedSec;
+    timing.copyBytes = copy.bytes;
+    log.line(
+      `Copiati ${copy.copied}/${copy.total} · saltati ${copy.skipped}` +
+        `${copy.recovered ? ` · recuperati al 2° tentativo ${copy.recovered}` : ''}` +
+        `${copy.driveStuck ? ' · LETTORE BLOCCATO' : ''}`
+    );
+    // solo i nomi dei file, non i percorsi: una cartella del supporto può
+    // chiamarsi come il paziente
+    for (const f of copy.skippedFiles.slice(0, 200)) log.line(`  non copiato: ${path.basename(f)}`);
 
     // Interruzione arrivata durante la copia (o fra copia e invio)
     if (copy.cancelled || session.cancelRequested) {
       if (preview) preview.kill();
       const reset = await cleanup({});
-      return { copy, send: null, iso, interrupted: true, reset };
+      return finish({ copy, send: null, iso, interrupted: true, reset });
     }
 
-    // Chiusura dell'anteprima SENZA attenderla: il riordino degli ultimi
-    // riquadri può finire mentre l'invio è già partito. Aspettarlo qui avrebbe
-    // aggiunto secondi morti fra copia e invio.
     // L'anteprima si ferma qui, prima dell'invio: legge l'intestazione di ogni
     // file dello staging, cioè dalla stessa cartella e dallo stesso disco da
     // cui storescu sta per leggere, e ogni apertura passa per l'antivirus.
@@ -347,9 +424,10 @@ ipcMain.handle('run-import', async (_e, opts) => {
     if (preview) preview.kill();
 
     if (copy.copied === 0) {
-      return { copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' };
+      return finish({ copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' });
     }
 
+    log.section('INVIO A PACS');
     const pending = sendStoreScu(
       { pattern: plan.pattern, partDirs: copy.partDirs, totalFiles: copy.copied },
       (ev) => {
@@ -365,16 +443,22 @@ ipcMain.handle('run-import', async (_e, opts) => {
     } finally {
       session.send = null;
     }
+    timing.sendSec = send.elapsedSec;
+    timing.sendBytes = send.bytes || 0;
 
     // Invio interrotto (operatore o RIS): lo staging resta a metà, va azzerato.
     // L'ISO resta montata di proposito, così si può ripartire senza rileggere il
     // supporto; viene smontata dalla pulizia finale.
     if (send.cancelled) {
       const reset = await cleanup({});
-      return { copy, send, iso, interrupted: true, reset };
+      return finish({ copy, send, iso, interrupted: true, reset });
     }
 
-    return { copy, send, iso, workers, turbo, mode };
+    return finish({ copy, send, iso, workers, turbo, mode });
+  } catch (err) {
+    log.line('ERRORE: ' + String((err && err.message) || err));
+    finish({ error: String((err && err.message) || err) });
+    throw err;
   } finally {
     ch.flush();
     if (preview) preview.kill();
@@ -382,11 +466,10 @@ ipcMain.handle('run-import', async (_e, opts) => {
     session.busy = false;
     session.send = null;
     session.cancelRequested = false;
+    await log.close();
   }
 });
 
-// Interruzione dell'invio in corso. Il chiamante riceve comunque il risultato
-// da 'run-import', con interrupted:true e lo staging già ripulito.
 // La riga dell'ultimo invio negli appunti. Il renderer non la vede mai: chiede
 // la copia e basta, il testo resta nel main.
 ipcMain.handle('copy-command', () => {
@@ -396,6 +479,8 @@ ipcMain.handle('copy-command', () => {
   return { ok: true };
 });
 
+// Interruzione dell'invio in corso. Il chiamante riceve comunque il risultato
+// da 'run-import', con interrupted:true e lo staging già ripulito.
 ipcMain.handle('stop-import', () => {
   if (!session.busy) return { stopped: false };
   // vale sia durante la copia (controllata file per file) sia durante l'invio

@@ -40,14 +40,87 @@ trascinamento per luminosità/contrasto, doppio clic per reimpostare.
 
 I casi gestiti:
 
-| Tipo | Sorgente | Copia | scan-pattern |
+| Tipo | Sorgente | Copia in staging | Cosa finisce in staging |
 |---|---|---|---|
-| A | CD/DVD con file `MP*` in `DICOM\` | diretta, nomi invariati | `MP*` |
-| B | file numerici senza estensione | rinomina in `.dcm` | `*.dcm` |
-| C | più sottocartelle con nomi file identici | rinomina + suffisso `_<n>` | `*.dcm` |
-| D | annidamento profondo | rinomina ricorsiva (+ suffisso anti-collisione) | `*.dcm` |
+| A | CD/DVD con file `MP*` in `DICOM\` | diretta, nomi invariati | solo i `MP*` |
+| B | file numerici senza estensione | rinomina in `.dcm` | tutto, come `.dcm` |
+| C | più sottocartelle con nomi file identici | rinomina + suffisso `_<n>` | tutto, come `.dcm` |
+| D | annidamento profondo | rinomina ricorsiva (+ suffisso anti-collisione) | tutto, come `.dcm` |
 | E | USB con `.iso` | `Mount-DiskImage` → tratta come CD → `Dismount-DiskImage` | come sopra |
-| F | USB con `.zip` | `Expand-Archive` in staging → cerca `DICOM\` → procedi | come sopra |
+| F | USB con `.zip` | estrazione nativa (`unzip.js`) → cerca `DICOM\` → procedi | come sopra |
+| G | immagini già `.dcm` in sottocartelle (`D:\0\0.x\*.dcm`) | si copiano **solo i `.dcm`**, il resto è il visualizzatore | i `.dcm` |
+
+A `storescu` l'app passa **la cartella di staging e basta**, senza
+`--scan-pattern`: in staging c'è già solo ciò che va inviato. Con questo
+`storescu`, `--scan-pattern "*.dcm"` lanciato come fa l'app non trova nessun
+file (verificato su `main`, commit 10e5674): il passaggio principale inviava
+zero file e tutto finiva nei ritentativi, uno per uno. I file ancora in copia
+stanno nella sottocartella `~copia`, e `storescu` senza `+r` non scende nelle
+sottocartelle: non può prendere un file a metà nemmeno quando una lettura
+bloccata di un DVD rovinato lo tiene aperto e non lo si può cancellare.
+
+## Dati dal campo (report del 25/09/2026)
+
+Due CD reali importati a mano da `cmd`, verso questo Synapse:
+
+| | Sessione 1 (CLIP) | Sessione 2 (PATIENTCD) |
+|---|---|---|
+| File · dimensione | 3172 · 665 MB | 1936 · 637 MB |
+| Copia | 7 min 09 s · 1,55 MB/s | 1 min 10 s · 9,10 MB/s |
+| Invio (1 associazione) | 3 min 29 s · **3,18 MB/s** · 15,2 file/s | 3 min 43 s · **2,86 MB/s** · 8,7 file/s |
+| Pausa manuale fra copia e invio | 20 s | 2 min 20 s |
+
+Cosa ne è disceso nel codice:
+
+- **Invio sequenziale di default.** Il comando che non perde associazioni ne
+  apre una sola; l'app ne apriva 2. Parallelo e turbo restano disponibili.
+- **ETA a byte, non a file.** L'invio tiene ~3 MB/s costanti, mentre in file/s
+  le due sessioni vanno da 15,2 a 8,7 (dipende dalla dimensione media delle
+  immagini). Stimata a file, la sessione 2 sarebbe uscita sbagliata del 43%; a
+  byte, del 10%. Prima di partire lo step 2 mostra dimensione e invio stimato a
+  `SEND_MBPS_ESTIMATE` (3 MB/s).
+- **Copia senza stima a priori.** È la fase variabile (1,5–9 MB/s): la stima
+  compare solo dopo qualche secondo di lettura misurata.
+- **Tempi per fase nel riepilogo e nel log**, con le stesse grandezze del report
+  (durata · MB · MB/s), così un'importazione dall'app si confronta riga per riga
+  con una fatta a mano.
+- **Nessuna pausa fra copia e invio**: nel report fino a 2 min 20 s.
+
+## Log delle importazioni
+
+Ogni importazione scrive `DICOM_Import_AAAA-MM-GG_hh-mm-ss.log` nella cartella
+**`Desktop\DICOM Import Log`** (se il Desktop non è scrivibile, nel profilo
+dell'app). Mai in `C:\tmp`, che viene svuotata. Il file si scrive mentre
+l'importazione procede: se si interrompe a metà, il log arriva fino a lì.
+
+Contiene: supporto e classificazione, parametri PACS, modalità di invio,
+percorso di `storescu`, tutte le righe di `storescu` con l'orario al
+millisecondo, file non copiati (solo il nome), durate e velocità per fase,
+esito. **Non contiene dati del paziente** — né nome, né ID, né data di nascita,
+né etichetta del volume — perché le postazioni sono condivise e il Desktop è la
+cartella più esposta.
+
+## CD/DVD danneggiati
+
+`fs.copyFile` gira su un thread del pool di libuv e una lettura ferma su un
+settore illeggibile non si può interrompere: il thread resta occupato finché
+Windows non rinuncia al settore. Il pool di default ha 4 thread, condivisi da
+tutto il processo. Misurato con letture bloccate simulate: **6 file illeggibili
+in testa facevano saltare anche tutti i 12 file leggibili successivi** — restavano
+in coda senza partire, scadevano, e finivano fra i "saltati".
+
+Ora:
+
+1. il pool è portato a 16 thread all'avvio;
+2. soprattutto, **non si avvia una lettura se non c'è un thread libero**: la
+   copia aspetta che una lettura abbandonata torni indietro. Questo vale anche se
+   il punto 1 non attecchisse. Sul caso realistico (il settore alla fine torna
+   errore) si passa da 0/12 a 12/12 file buoni anche con il pool di default;
+3. i file scaduti vengono **ritentati una volta, in sequenza**, a fine copia:
+   quelli rimasti in coda dietro un settore rovinato di solito passano. Ci si
+   ferma dopo 8 scadenze di fila o 3 minuti;
+4. se il lettore non restituisce più nessuna lettura per 60 s è considerato
+   bloccato: si smette di leggere e si invia quanto già copiato, dicendolo.
 
 ## Prestazioni
 
@@ -87,7 +160,7 @@ si agisce:
 
 | Differenza | Cosa fare |
 |---|---|
-| A mano parte **una sola associazione**; l'app ne apre 2 (normale) o 6 (turbo). Se Synapse limita le associazioni contemporanee per AE title, quelle in più vengono rifiutate | Tendina **Invio → Sequenziale**: una sola associazione, staging non spezzato, un solo `storescu` con `+sd`. È il lancio manuale, dentro l'app |
+| A mano parte **una sola associazione**. Se Synapse limita le associazioni contemporanee per AE title, quelle in più vengono rifiutate | **Sequenziale è il default**: una sola associazione, staging non spezzato, un solo `storescu` con `+sd`. È il comando del report, dentro l'app. Parallelo (2) e turbo (6) si scelgono dalla tendina |
 | A mano non ci sono timeout: DCMTK aspetta il PACS all'infinito. L'app glieli passa, e un PACS lento può far cadere l'associazione | Impostazioni → *Riga di comando di storescu* → **Passa i timeout a storescu**: spegnendolo si aspetta come da cmd. La guardia di inattività dell'app resta, quindi resta recuperabile |
 | A mano `TCP_NODELAY` non è impostata | Stessa sezione, si può spegnere |
 | A mano non c'è la copia in staging | Quella serve (percorsi con spazi, DVD rovinati, invio parziale) e non si toglie |
@@ -120,9 +193,10 @@ Nessun processo `storescu` sopravvive alla fine dell'invio, alla chiusura della
 finestra o a un errore: se uno dei processi paralleli fallisce, gli altri
 vengono abbattuti invece di restare a scrivere sul PACS scollegati dall'app.
 
-> **Mai** usare `--scan-pattern "*"`: con `+sd` esce dalla cartella e trova `NTUSER.DAT`,
-> facendo abortire l'associazione. Sono ammessi solo `MP*` e `*.dcm`
-> (vincolo applicato in `sendStoreScu.js`).
+> **A mano, mai** usare `--scan-pattern "*"` su una cartella che non sia lo
+> staging: con `+sd` trova `NTUSER.DAT` e fa abortire l'associazione. L'app non
+> passa alcun carattere jolly: indica solo la propria cartella di staging, dove
+> nessun altro scrive.
 
 ## Sviluppo / build
 
@@ -158,6 +232,8 @@ riga `icon: build/icon.ico`.
 - `asar: false` — serve l'accesso diretto ai file locali.
 - La finestra principale usa `loadURL` + `url.format()` per il path resolution nell'exe pacchettizzato.
 - `storescu` è invocato con `child_process.spawn` e stdout parsato riga per riga per la progress bar e il log live.
+- `storescu.exe` mancante viene segnalato **prima** della copia, non dopo minuti di lettura del CD.
+- I supporti vengono rilevati da soli all'avvio e a ogni «Nuova importazione».
 - La copia in `C:\tmp\dicom_import` avviene sempre prima dell'invio (percorsi con spazi, lettura da ottica, invio parziale su DVD danneggiati). Ogni file ha un timeout di lettura configurabile (`FILE_COPY_TIMEOUT_MS`).
 - La pulizia finale è sempre dietro conferma dell'utente.
 

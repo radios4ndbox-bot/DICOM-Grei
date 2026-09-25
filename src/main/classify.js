@@ -66,24 +66,21 @@ function findDataRoot(sourcePath) {
 }
 
 /**
- * Percorre dataRoot una volta sola.
+ * Percorre dataRoot una volta sola. Restituisce solo i file da copiare (gli
+ * scarti sono contati, non elencati): tutto il resto — conteggi per cartella,
+ * file diretti, cartelle con file propri — si ricava da questo elenco, così che
+ * un filtro applicato dopo (vedi onlyDicomExtension) si rifletta ovunque.
  *
  * @returns {{
- *   files: {p:string, sub:string}[],  // sub = cartella di primo livello ('' se file diretto)
- *   counts: Map<string, number>,      // file per cartella di primo livello
- *   rootFiles: string[],              // nomi dei file direttamente in dataRoot
- *   dirs: string[],                   // cartelle di primo livello
- *   directFileDirs: Set<string>,      // fra quelle, chi ha file propri (non annidati)
+ *   files: {p:string, sub:string, d:number}[], // sub = cartella di primo livello, d = profondità
+ *   dirs: string[],                            // cartelle di primo livello
  *   junk: number,
  *   truncated: boolean
  * }}
  */
 function walkOnce(dataRoot) {
   const files = [];
-  const counts = new Map();
-  const rootFiles = [];
   const dirs = [];
-  const directFileDirs = new Set();
   let junk = 0;
   let truncated = false;
 
@@ -96,15 +93,11 @@ function walkOnce(dataRoot) {
       const p = path.join(cur, e.name);
 
       if (e.isDirectory()) {
-        const nextSub = depth === 0 ? e.name : sub;
         if (depth === 0) dirs.push(e.name);
-        stack.push([p, nextSub, depth + 1]);
+        stack.push([p, depth === 0 ? e.name : sub, depth + 1]);
         continue;
       }
       if (!e.isFile()) continue;
-
-      if (depth === 0) rootFiles.push(e.name);
-      else if (depth === 1) directFileDirs.add(sub);
 
       if (isJunk(e.name)) {
         junk++;
@@ -114,18 +107,98 @@ function walkOnce(dataRoot) {
         truncated = true;
         continue;
       }
-      files.push({ p, sub });
-      counts.set(sub, (counts.get(sub) || 0) + 1);
+      files.push({ p, sub, d: depth });
     }
   }
 
-  return { files, counts, rootFiles, dirs, directFileDirs, junk, truncated };
+  return { files, dirs, junk, truncated };
 }
 
-function decide(dataRoot, w) {
+/**
+ * Conteggi derivati dall'elenco dei file DA COPIARE.
+ *
+ * Prima "cartella con file propri" contava anche i file scartati: una cartella
+ * del visualizzatore piena di .exe e .dll risultava una sottocartella di
+ * immagini, e poteva spostare la classificazione verso il Tipo C.
+ */
+function summarize(files) {
+  const counts = new Map();
+  const rootNames = [];
+  const directFileDirs = new Set();
+  for (const f of files) {
+    counts.set(f.sub, (counts.get(f.sub) || 0) + 1);
+    if (f.d === 0) rootNames.push(path.basename(f.p));
+    else if (f.d === 1) directFileDirs.add(f.sub);
+  }
+  return { counts, rootNames, directFileDirs };
+}
+
+/**
+ * Supporti le cui immagini hanno già estensione .dcm (Tipo G del report sul
+ * campo: `D:\0\0.x\*.dcm`). Lì il comando a mano è `for /r ... (*.dcm)`: tutto
+ * ciò che non è .dcm appartiene al visualizzatore o al sistema, e copiarlo
+ * significa solo inviare file che il PACS rifiuterà come "Bad DICOM file".
+ *
+ * Si applica solo se i .dcm sono la maggioranza: un supporto con immagini
+ * senza estensione e un .dcm isolato non deve perdere le immagini.
+ */
+function onlyDicomExtension(files) {
+  let dcm = 0;
+  for (const f of files) if (f.p.toLowerCase().endsWith('.dcm')) dcm++;
+  if (dcm === 0 || dcm === files.length || dcm * 2 < files.length) {
+    return { files, excluded: 0 };
+  }
+  const kept = files.filter((f) => f.p.toLowerCase().endsWith('.dcm'));
+  return { files: kept, excluded: files.length - kept.length };
+}
+
+/**
+ * Ordine di lettura il più vicino possibile a quello fisico sul disco.
+ *
+ * Su CD/DVD i record di directory ISO9660/UDF sono ordinati per nome e i
+ * programmi di masterizzazione scrivono i dati nello stesso ordine: leggere
+ * così significa far avanzare la testina invece di farla saltare. Il percorso
+ * della visita (una pila, quindi a ritroso fra cartelle sorelle) non lo
+ * garantiva. Il confronto è per segmento di percorso: con '\0' come separatore
+ * "1" precede "10" come nel record di directory, mentre con '\' finirebbe dopo.
+ */
+function sortDiscOrder(files) {
+  const keyed = files.map((f) => ({ f, k: f.p.toUpperCase().split(path.sep).join('\0') }));
+  keyed.sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : 0));
+  return keyed.map((x) => x.f);
+}
+
+// Budget di tempo per leggere le dimensioni dei file. Su CD la dimensione sta
+// nel record di directory già letto dalla visita, quindi di norma è gratis; il
+// budget esiste perché non lo è su ogni lettore, e l'avvio non deve pagarlo.
+const SIZE_BUDGET_MS = 3000;
+
+/** Dimensione totale: esatta se il budget basta, altrimenti stimata dalla media. */
+function measure(files) {
+  const t0 = Date.now();
+  let bytes = 0;
+  let n = 0;
+  for (const f of files) {
+    if (Date.now() - t0 > SIZE_BUDGET_MS) break;
+    try {
+      f.size = fs.statSync(f.p).size;
+      bytes += f.size;
+      n++;
+    } catch {
+      // file sparito o illeggibile: lo scoprirà la copia
+    }
+  }
+  if (files.length === 0) return { totalBytes: 0, bytesEstimated: false };
+  if (n === 0) return { totalBytes: null, bytesEstimated: true };
+  if (n === files.length) return { totalBytes: bytes, bytesEstimated: false };
+  return { totalBytes: Math.round((bytes / n) * files.length), bytesEstimated: true };
+}
+
+function decide(dataRoot, w, files, extra) {
+  const sum = summarize(files);
   const tree = w.dirs
-    .map((name) => ({ name, count: w.counts.get(name) || 0 }))
-    .concat(w.counts.get('') ? [{ name: '(file diretti)', count: w.counts.get('') }] : []);
+    .map((name) => ({ name, count: sum.counts.get(name) || 0 }))
+    .concat(sum.counts.get('') ? [{ name: '(file diretti)', count: sum.counts.get('') }] : []);
 
   const base = {
     dataRoot,
@@ -133,14 +206,17 @@ function decide(dataRoot, w) {
     // classificato altrimenti, la copia deve sapere su cosa mettere i suffissi
     subfolders: w.dirs,
     tree,
-    totalFiles: w.files.length,
-    skippedJunk: w.junk,
+    totalFiles: files.length,
+    totalBytes: extra.totalBytes,
+    bytesEstimated: extra.bytesEstimated,
+    skippedJunk: w.junk + extra.excluded,
+    excludedNonDcm: extra.excluded,
     truncated: w.truncated,
   };
 
   // I file scartati come "non immagine" non devono spostare la classificazione:
   // si guarda sempre a cosa resta da copiare.
-  const keptRoot = w.rootFiles.filter((n) => !isJunk(n));
+  const keptRoot = sum.rootNames;
 
   if (keptRoot.some(isMpName)) {
     return {
@@ -175,7 +251,7 @@ function decide(dataRoot, w) {
     };
   }
 
-  const fileSubdirs = w.dirs.filter((d) => w.directFileDirs.has(d));
+  const fileSubdirs = w.dirs.filter((d) => sum.directFileDirs.has(d));
 
   if (fileSubdirs.length >= 2) {
     return {
@@ -220,11 +296,23 @@ function decide(dataRoot, w) {
 function scanSource(sourcePath) {
   const dataRoot = findDataRoot(sourcePath);
   const w = walkOnce(dataRoot);
-  return { plan: decide(dataRoot, w), files: w.files };
+  const { files: kept, excluded } = onlyDicomExtension(w.files);
+  const files = sortDiscOrder(kept);
+  const { totalBytes, bytesEstimated } = measure(files);
+
+  const plan = decide(dataRoot, w, files, { excluded, totalBytes, bytesEstimated });
+  if (excluded) {
+    plan.reasoning +=
+      ` Immagini con estensione .dcm: copiati solo i .dcm, ${excluded} altri file esclusi` +
+      ' (visualizzatore e dati di sistema).';
+  }
+  // la profondità serviva solo alla classificazione: non viaggia oltre
+  for (const f of files) delete f.d;
+  return { plan, files };
 }
 
 function classify(sourcePath) {
   return scanSource(sourcePath).plan;
 }
 
-module.exports = { classify, scanSource, isJunk, isMpName };
+module.exports = { classify, scanSource, isJunk, isMpName, sortDiscOrder, onlyDicomExtension };
