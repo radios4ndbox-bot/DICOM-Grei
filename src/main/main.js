@@ -299,6 +299,12 @@ ipcMain.handle('run-import', async (_e, opts) => {
       `${plan.skippedJunk ? ` · ${plan.skippedJunk} file non-immagine esclusi` : ''}`
   );
   log.line(`PACS: ${config.DEST_AET}@${config.PACS_IP}:${config.PACS_PORT} · AET sorgente ${config.SRC_AET}`);
+  {
+    const d = settings.describe();
+    const origin = { personal: "dell'utente", shared: 'della postazione', default: 'NESSUNA, valori predefiniti' }[d.source];
+    log.line(`Impostazioni: ${origin}`);
+    for (const w of d.warnings) log.line(`ATTENZIONE: ${w}`);
+  }
   log.line(
     `Invio: ${mode === 'single' ? 'sequenziale' : mode} · ` +
       `${workers} ${workers === 1 ? 'associazione' : 'associazioni'}`
@@ -475,6 +481,7 @@ function refreshPacsBadge() {
     aet: config.DEST_AET,
     host: config.PACS_IP,
     port: config.PACS_PORT,
+    configured: settings.describe().configured,
   });
 }
 

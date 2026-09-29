@@ -185,7 +185,12 @@ function buildSettingsForm(desc) {
     body.append(wrap);
   }
 
-  $('set-file').textContent = 'Salvate in: ' + desc.file;
+  const where = {
+    personal: 'Impostazioni personali di questo utente: ' + desc.file,
+    shared: 'Impostazioni della postazione, comuni a tutti gli utenti: ' + desc.file,
+    default: 'PACS non ancora configurato su questa postazione: valori predefiniti.',
+  }[desc.source];
+  $('set-file').textContent = [where].concat(desc.warnings || []).join('\n');
   $('set-errors').hidden = true;
 }
 
@@ -245,7 +250,13 @@ $('set-save').addEventListener('click', async () => {
       return;
     }
     closeSettings();
-    showModal('Impostazioni salvate', 'I nuovi valori valgono dalla prossima importazione.');
+    showModal(
+      'Impostazioni salvate',
+      'I nuovi valori valgono dalla prossima importazione.' +
+        (r.shared
+          ? ' Valgono anche per gli altri utenti di questa postazione.'
+          : ' Valgono solo per questo utente.')
+    );
   } catch (err) {
     showSettingsErrors([err.message]);
   } finally {
@@ -254,7 +265,7 @@ $('set-save').addEventListener('click', async () => {
 });
 
 $('set-reset').addEventListener('click', async () => {
-  if (!confirm('Ripristinare tutti i valori predefiniti?')) return;
+  if (!confirm('Ripristinare le impostazioni? Si torna a quelle della postazione, se ci sono, altrimenti ai valori predefiniti.')) return;
   try {
     const r = await window.api.resetSettings();
     if (!r.ok) return showSettingsErrors(r.errors);
@@ -264,9 +275,16 @@ $('set-reset').addEventListener('click', async () => {
   }
 });
 
-window.api.onPacsChanged((p) => {
-  $('pacs-badge').textContent = `${p.aet} @ ${p.host}:${p.port}`;
-});
+// PACS mai configurato: il badge lo dice invece di mostrare 127.0.0.1, che
+// sembra un indirizzo vero e porta a un invio che fallisce.
+function showPacsBadge(aet, host, port, configured) {
+  const b = $('pacs-badge');
+  b.classList.toggle('pacs-badge--warn', !configured);
+  b.textContent = configured ? `${aet} @ ${host}:${port}` : 'PACS non configurato';
+  b.title = configured ? '' : "Aprire l'ingranaggio e impostare indirizzo, porta e AE title del PACS";
+}
+
+window.api.onPacsChanged((p) => showPacsBadge(p.aet, p.host, p.port, p.configured));
 
 // ---------------------------------------------------------------- anteprima
 
@@ -851,9 +869,7 @@ $('btn-restart').addEventListener('click', () => {
 // il badge in alto deve riflettere le impostazioni salvate, non il valore fisso nell'HTML
 window.api
   .getSettings()
-  .then((d) => {
-    $('pacs-badge').textContent = `${d.values.DEST_AET} @ ${d.values.PACS_IP}:${d.values.PACS_PORT}`;
-  })
+  .then((d) => showPacsBadge(d.values.DEST_AET, d.values.PACS_IP, d.values.PACS_PORT, d.configured))
   .catch(() => {});
 
 showStep('media');

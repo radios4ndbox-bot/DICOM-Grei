@@ -16,13 +16,35 @@ proxy ospedaliero.
 ## Parametri PACS (da configurare al primo avvio)
 
 I valori presenti nel repository sono **segnaposto**: i parametri reali della rete non
-sono versionati. Si impostano una volta sola dall'ingranaggio in alto a destra e vengono
-salvati in `%APPDATA%\dicom-import-tool\settings.json`, fuori dal repository
-(la cartella è fissata in `main.js`, `USER_DATA_DIR`). Per
-attrezzare più postazioni si può copiare quel file sulle altre.
+sono versionati. Si impostano una volta sola dall'ingranaggio in alto a destra e valgono
+**per tutta la postazione**, non solo per chi li ha impostati:
 
-Finché non sono configurati, il badge in alto mostra `PACS @ 127.0.0.1:104` e l'invio
-fallisce con un errore di connessione: è il segnale che la configurazione manca.
+| File | Chi lo usa |
+|---|---|
+| `%ProgramData%\DICOM Grei\settings.json` | tutti gli utenti Windows della postazione |
+| `%APPDATA%\dicom-import-tool\settings.json` | un solo utente (cartella fissata in `main.js`, `USER_DATA_DIR`) |
+
+Vale il file salvato per ultimo fra i due, e un file personale più recente viene
+ricopiato in quello della postazione. Sulle postazioni già in uso basta quindi che un
+utente configurato apra la nuova versione una volta: da lì in poi anche chi non aveva
+mai aperto l'ingranaggio trova il PACS.
+
+- Il file della postazione lo può modificare solo l'utente Windows che l'ha creato; gli
+  altri lo leggono. I permessi non vengono allargati apposta: chi scrive quel file decide
+  verso quale host partono le immagini di tutti. Se un altro utente salva, il suo valore
+  vale solo per lui (l'app lo dice dopo il salvataggio).
+- Un indirizzo di loopback (`127.x`, `localhost`: il segnaposto o un PACS finto per le
+  prove) resta sempre personale e non finisce mai nel file della postazione. Un file
+  con un PACS vero ha la precedenza su uno con il loopback, anche se più vecchio: le
+  versioni precedenti, con «Ripristina», scrivevano `127.0.0.1` nel file personale.
+- «Ripristina» toglie il file personale: si torna alla configurazione della postazione,
+  o ai predefiniti se non c'è.
+- Per attrezzare un'altra postazione si può copiare uno dei due file.
+
+Finché il PACS non è configurato il badge in alto mostra **«PACS non configurato»**
+invece di `127.0.0.1`, e il log di ogni importazione dice da dove vengono le
+impostazioni (dell'utente, della postazione, nessuna). Un file illeggibile non blocca
+l'avvio: viene ignorato e segnalato nel dialogo delle impostazioni e nel log.
 
 | | predefinito nel repo |
 |---|---|

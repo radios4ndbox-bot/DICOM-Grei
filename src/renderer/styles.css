@@ -51,6 +51,11 @@ body {
   padding: 5px 9px;
   border-radius: 6px;
 }
+.pacs-badge--warn {
+  color: var(--warn);
+  border-color: var(--warn);
+  font-weight: 600;
+}
 
 .steps {
   display: flex;
@@ -513,6 +518,6 @@ code { background: #eef4f6; padding: 1px 5px; border-radius: 4px; font-family: "
   line-height: 1.5;
   white-space: pre-line;
 }
-.set__file { margin: 10px 0 0; font-size: 11px; word-break: break-all; }
+.set__file { margin: 10px 0 0; font-size: 11px; word-break: break-all; white-space: pre-line; }
 .set__actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
 .set__spacer { flex: 1; }

@@ -305,7 +305,36 @@ function validate(input, base) {
 
 // ---------------------------------------------------------------- persistenza
 
-function settingsPath() {
+/*
+ * Due file, lo stesso contenuto:
+ *
+ *   personale    %APPDATA%\dicom-import-tool\settings.json  (un utente Windows)
+ *   postazione   %ProgramData%\DICOM Grei\settings.json     (tutti gli utenti)
+ *
+ * %APPDATA% è per utente: su una postazione condivisa chi non aveva mai aperto
+ * l'ingranaggio vedeva 127.0.0.1 e l'invio falliva, anche se un collega aveva
+ * già configurato il PACS sullo stesso PC. Ora vale il file salvato per ultimo
+ * fra i due (_savedAt, o la data del file per quelli delle versioni
+ * precedenti), e un file personale più recente viene ricopiato in quello della
+ * postazione. Il primo utente già configurato che apre questa versione
+ * configura così anche tutti gli altri.
+ *
+ * Il file della postazione lo crea il primo utente che ci scrive, e Windows
+ * lascia modificarlo solo a lui: gli altri lo leggono. Non si allargano i
+ * permessi apposta, perché chi può scriverlo decide verso quale host partono
+ * le immagini di tutti. Se un altro utente salva, il suo file personale è più
+ * recente e vale per lui; la scrittura sulla postazione fallisce in silenzio.
+ *
+ * Un indirizzo di loopback (127.x, localhost: il segnaposto, o un PACS finto
+ * per le prove) non va mai nel file della postazione, e un file con un PACS
+ * vero ha la precedenza su uno con il loopback, anche se più vecchio.
+ */
+
+const SHARED_DIR_NAME = 'DICOM Grei';
+const pathOverride = { personal: null, shared: undefined }; // solo per i test
+
+function personalPath() {
+  if (pathOverride.personal) return pathOverride.personal;
   try {
     // require dentro la funzione: così il modulo resta caricabile fuori da Electron
     const { app } = require('electron');
@@ -315,7 +344,74 @@ function settingsPath() {
   }
 }
 
+function sharedPath() {
+  if (pathOverride.shared !== undefined) return pathOverride.shared;
+  if (process.platform !== 'win32') return null;
+  const base = process.env.ProgramData || 'C:\\ProgramData';
+  return path.join(base, SHARED_DIR_NAME, 'settings.json');
+}
+
+function setPathsForTest(p) {
+  if ('personal' in p) pathOverride.personal = p.personal;
+  if ('shared' in p) pathOverride.shared = p.shared;
+}
+
+function isLoopback(host) {
+  const h = String(host).trim().toLowerCase();
+  return h === 'localhost' || h === '::1' || /^127\./.test(h);
+}
+
+/** { kind, path, exists, ok, data, time } — non lancia mai. */
+function readSettingsFile(kind, file) {
+  const out = { kind, path: file, exists: false, ok: false, data: null, time: 0 };
+  if (!file) return out;
+  let st;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    return out;
+  }
+  out.exists = true;
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return out;
+    out.data = data;
+    out.time = Number(data._savedAt) || st.mtimeMs;
+    out.ok = true;
+  } catch {}
+  return out;
+}
+
+/** Scrittura su file temporaneo e rename: chi legge non vede mai un file a metà. */
+function writeSettingsFile(file, values, time) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify({ ...values, _savedAt: time }, null, 2), 'utf8');
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {}
+    throw err;
+  }
+}
+
+/** true se il file della postazione è stato scritto. */
+function writeShared(values, time) {
+  const file = sharedPath();
+  if (!file || isLoopback(values.PACS_IP)) return false;
+  try {
+    writeSettingsFile(file, values, time);
+    return true;
+  } catch {
+    return false; // file di un altro utente, o ProgramData bloccata da policy
+  }
+}
+
 let current = { ...DEFAULTS };
+// da dove vengono i valori correnti: 'personal' | 'shared' | 'default'
+let status = { source: 'default', file: null, warnings: [] };
 
 /** Riversa le impostazioni correnti in config, da cui leggono tutti i moduli. */
 function apply() {
@@ -351,16 +447,32 @@ function apply() {
 }
 
 function load() {
-  let stored = {};
-  try {
-    stored = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
-  } catch {
-    stored = {};
+  const personal = readSettingsFile('personal', personalPath());
+  const shared = readSettingsFile('shared', sharedPath());
+
+  const warnings = [];
+  for (const f of [personal, shared]) {
+    if (f.exists && !f.ok) warnings.push(`File delle impostazioni illeggibile, ignorato: ${f.path}`);
   }
+
+  // Vale il più recente, a pari data quello personale. Prima però un PACS vero
+  // di uno su loopback: nelle versioni precedenti «Ripristina» scriveva i
+  // segnaposto (127.0.0.1) nel file personale, che essendo più recente avrebbe
+  // coperto la configurazione della postazione.
+  const loop = (f) => (isLoopback(f.data.PACS_IP === undefined ? DEFAULTS.PACS_IP : f.data.PACS_IP) ? 1 : 0);
+  const usable = [personal, shared].filter((f) => f.ok);
+  usable.sort((a, b) => loop(a) - loop(b) || b.time - a.time);
+  const chosen = usable[0] || null;
+
   // un file manomesso o di una versione precedente non deve rompere l'avvio
-  const { values } = validate(stored && typeof stored === 'object' ? stored : {}, DEFAULTS);
+  const { values } = validate(chosen ? chosen.data : {}, DEFAULTS);
   current = values;
   apply();
+  status = { source: chosen ? chosen.kind : 'default', file: chosen ? chosen.path : null, warnings };
+
+  if (chosen && chosen.kind === 'personal' && (!shared.ok || shared.time < chosen.time)) {
+    writeShared(values, chosen.time);
+  }
   return current;
 }
 
@@ -370,29 +482,46 @@ function save(input) {
 
   current = values;
   apply();
+  const time = Date.now();
+  const p = personalPath();
   try {
-    const p = settingsPath();
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, JSON.stringify(current, null, 2), 'utf8');
+    writeSettingsFile(p, values, time);
   } catch (err) {
     return { ok: false, errors: [`Impossibile salvare: ${err.message}`], values: current };
   }
-  return { ok: true, errors: [], values: current };
+  const shared = writeShared(values, time);
+  status = { source: 'personal', file: p, warnings: [] };
+  return { ok: true, errors: [], values: current, shared };
 }
 
+/**
+ * Toglie il file personale e rilegge: si torna alle impostazioni della
+ * postazione, se ci sono, altrimenti ai predefiniti. Scrivere i predefiniti
+ * come file più recente avrebbe invece rimesso 127.0.0.1 sopra un PACS
+ * configurato.
+ */
 function reset() {
-  current = { ...DEFAULTS };
-  apply();
   try {
-    const p = settingsPath();
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, JSON.stringify(current, null, 2), 'utf8');
-  } catch {}
+    fs.rmSync(personalPath(), { force: true });
+  } catch (err) {
+    return { ok: false, errors: [`Impossibile ripristinare: ${err.message}`], values: current };
+  }
+  load();
   return { ok: true, errors: [], values: current };
 }
 
 function describe() {
-  return { schema: SCHEMA, defaults: DEFAULTS, values: current, file: settingsPath() };
+  return {
+    schema: SCHEMA,
+    defaults: DEFAULTS,
+    values: current,
+    source: status.source,
+    configured: status.source !== 'default',
+    file: status.file || personalPath(),
+    personalFile: personalPath(),
+    sharedFile: sharedPath(),
+    warnings: status.warnings,
+  };
 }
 
-module.exports = { load, save, reset, describe, validate, DEFAULTS, SCHEMA };
+module.exports = { load, save, reset, describe, validate, isLoopback, setPathsForTest, DEFAULTS, SCHEMA };
