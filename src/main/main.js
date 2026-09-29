@@ -13,6 +13,14 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
+// Cartella delle impostazioni (settings.json con i parametri del PACS): resta
+// %APPDATA%\dicom-import-tool, il nome di prima di DICOM Grei, così le
+// postazioni già configurate la ritrovano. Fissata qui e non lasciata a
+// "name" di package.json, che ora è dicom-grei. Va fatto prima di qualunque
+// getPath('userData') e di requestSingleInstanceLock, che la usa.
+const USER_DATA_DIR = 'dicom-import-tool';
+app.setPath('userData', path.join(app.getPath('appData'), USER_DATA_DIR));
+
 const { detectMedia } = require('./detectMedia');
 const { prepareSource } = require('./isoZip');
 const { scanMedia } = require('./scan');
@@ -487,7 +495,7 @@ ipcMain.handle('cleanup', async () => {
 
 // ---------------------------------------------------------------- lifecycle
 
-// Due istanze condividerebbero C:\tmp\dicom_import: la seconda svuoterebbe lo
+// Due istanze condividerebbero C:\tmp\dicom_grei: la seconda svuoterebbe lo
 // staging mentre la prima sta ancora inviando al PACS.
 if (!app.requestSingleInstanceLock()) {
   app.quit();

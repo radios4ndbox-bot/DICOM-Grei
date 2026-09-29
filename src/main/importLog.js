@@ -22,7 +22,7 @@ const path = require('path');
  * SOP, esiti.
  */
 
-const DIR_NAME = 'DICOM Import Log';
+const DIR_NAME = 'DICOM Grei Log';
 
 function pad(n, w = 2) {
   return String(n).padStart(w, '0');
@@ -83,7 +83,7 @@ function openImportLog(opts = {}) {
   for (const d of dirs) {
     try {
       fs.mkdirSync(d, { recursive: true });
-      const f = path.join(d, `DICOM_Import_${stamp()}.log`);
+      const f = path.join(d, `DICOM_Grei_${stamp()}.log`);
       // apertura sincrona: se la cartella non è scrivibile lo si sa qui, non
       // al primo write asincrono quando è troppo tardi per cambiare cartella
       const fd = fs.openSync(f, 'a');

@@ -26,7 +26,10 @@ function resolveStorescu() {
 }
 
 module.exports = {
-  // Parametri PACS Synapse Fujifilm — fissi
+  // Parametri PACS Synapse Fujifilm — segnaposto, i veri stanno in settings.json.
+  // SRC_AET resta DICOM_IMPORT anche dopo il cambio di nome: è l'AE title con
+  // cui la postazione si presenta al PACS, e un PACS che conosce questo nome
+  // rifiuterebbe un "DICOM_GREI" dopo un «Ripristina predefiniti».
   SRC_AET: 'DICOM_IMPORT',
   DEST_AET: 'PACS',
   PACS_IP: '127.0.0.1',
@@ -37,12 +40,12 @@ module.exports = {
 
   // Area di staging locale: si copia sempre qui prima di inviare.
   // Viene SVUOTATA all'inizio di ogni import.
-  STAGING_DIR: 'C:\\tmp\\dicom_import',
+  STAGING_DIR: 'C:\\tmp\\dicom_grei',
 
   // Estrazione degli ZIP. DEVE stare fuori da STAGING_DIR: stageFiles()
   // svuota lo staging prima di copiare, e con l'estrazione dentro cancellava
   // la sorgente da cui stava per leggere (import da ZIP sempre a 0 file).
-  EXTRACT_DIR: 'C:\\tmp\\dicom_import_src',
+  EXTRACT_DIR: 'C:\\tmp\\dicom_grei_src',
 
   // Timeout lettura per singolo file (DVD danneggiati)
   FILE_COPY_TIMEOUT_MS: 15000,
@@ -136,5 +139,12 @@ module.exports = {
   // Le copie in staging restano disponibili per la giornata e vengono
   // eliminate al cambio di data (vedi dailyPurge).
   // fuori dallo staging, altrimenti verrebbe cancellato a ogni import
-  DAILY_STAMP: 'C:\\tmp\\dicom_import.day',
+  DAILY_STAMP: 'C:\\tmp\\dicom_grei.day',
+
+  // Le stesse tre cartelle col nome di prima di DICOM Grei. Sulle postazioni
+  // aggiornate restano lì, anche da 1 GB e più: dailyPurge le toglie, ma solo
+  // se la versione vecchia non ha girato oggi (vedi purgeLegacy in cleanup.js).
+  LEGACY_STAGING_DIR: 'C:\\tmp\\dicom_import',
+  LEGACY_EXTRACT_DIR: 'C:\\tmp\\dicom_import_src',
+  LEGACY_DAILY_STAMP: 'C:\\tmp\\dicom_import.day',
 };

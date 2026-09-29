@@ -15,7 +15,7 @@ const { decode } = require('./dicomPixels');
  * 3000 immagini erano minuti di I/O ottico con la finestra congelata.
  *
  * Qui cambiano due cose. Primo: si leggono i file GIÀ COPIATI in
- * C:\tmp\dicom_import, cioè da disco locale, riusando un I/O che la copia ha
+ * C:\tmp\dicom_grei, cioè da disco locale, riusando un I/O che la copia ha
  * appena fatto — il supporto non viene letto una seconda volta. Secondo: tutto
  * gira in un worker thread, quindi né la barra di avanzamento né il pulsante
  * "Interrompi" possono restare bloccati.

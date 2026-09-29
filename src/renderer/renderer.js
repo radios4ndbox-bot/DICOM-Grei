@@ -803,7 +803,7 @@ function onImportDone(result) {
 
 $('btn-cleanup').addEventListener('click', async () => {
   const withIso = !!$('btn-cleanup').dataset.iso;
-  if (!confirm('Svuotare C:\\tmp\\dicom_import' + (withIso ? " e smontare l'ISO" : '') + '?')) return;
+  if (!confirm('Svuotare C:\\tmp\\dicom_grei' + (withIso ? " e smontare l'ISO" : '') + '?')) return;
   $('btn-cleanup').disabled = true;
   try {
     const r = await window.api.cleanup();

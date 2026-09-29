@@ -6,7 +6,7 @@ const config = require('./config');
 const { dismountIso } = require('./isoZip');
 
 /**
- * Svuota C:\tmp\dicom_import e, se richiesto, smonta l'ISO.
+ * Svuota lo staging (C:\tmp\dicom_grei) e, se richiesto, smonta l'ISO.
  * Da chiamare solo dopo conferma esplicita dell'utente.
  *
  * @param {{ iso?: string|null }} opts
@@ -36,9 +36,9 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function readStamp() {
+function readStamp(file = config.DAILY_STAMP) {
   try {
-    return fs.readFileSync(config.DAILY_STAMP, 'utf8').trim();
+    return fs.readFileSync(file, 'utf8').trim();
   } catch {
     return '';
   }
@@ -51,6 +51,31 @@ function writeStamp(day) {
 }
 
 /**
+ * Cartelle col nome di prima di DICOM Grei (C:\tmp\dicom_import…), rimaste
+ * sulle postazioni aggiornate. Si tolgono solo se la versione vecchia non ha
+ * girato oggi: la sua data sta in dicom_import.day, che scriveva all'avvio e a
+ * ogni cambio di data. Con l'installazione per utente, su una postazione
+ * condivisa un altro utente può avere ancora la versione vecchia aperta, e il
+ * suo staging di oggi non si tocca. Una cartella di un altro utente che non si
+ * può cancellare resta dov'è, senza errori.
+ */
+async function purgeLegacy() {
+  const dirs = [config.LEGACY_STAGING_DIR, config.LEGACY_EXTRACT_DIR];
+  if (!dirs.some((d) => fs.existsSync(d))) return false;
+  if (readStamp(config.LEGACY_DAILY_STAMP) === today()) return false;
+
+  for (const d of dirs) {
+    try {
+      await fs.promises.rm(d, { recursive: true, force: true });
+    } catch {}
+  }
+  try {
+    await fs.promises.rm(config.LEGACY_DAILY_STAMP, { force: true });
+  } catch {}
+  return true;
+}
+
+/**
  * Conservazione giornaliera: le copie in staging restano disponibili per tutta
  * la giornata (utile se un invio va rifatto), e vengono eliminate al primo
  * controllo successivo al cambio di data.
@@ -59,6 +84,8 @@ function writeStamp(day) {
  * @returns {Promise<{purged:boolean, day:string, previous:string}>}
  */
 async function dailyPurge(force = false) {
+  await purgeLegacy();
+
   const day = today();
   const previous = readStamp();
 

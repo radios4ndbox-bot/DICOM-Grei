@@ -1,7 +1,10 @@
 # DICOM Grei
 
-(ex DICOM Import Tool: la cartella delle impostazioni mantiene il vecchio nome,
-`dicom-import-tool`, così le postazioni già configurate non perdono niente)
+(ex DICOM Import Tool. Del nome vecchio restano solo tre cose, apposta: la
+cartella delle impostazioni `%APPDATA%\dicom-import-tool`, l'`appId` dell'installer
+e l'AE title sorgente predefinito `DICOM_IMPORT`. Cambiarle romperebbe le
+postazioni già configurate: parametri del PACS persi, versione vecchia installata
+accanto alla nuova, PACS che non riconosce la postazione.)
 
 App desktop Electron per importare studi DICOM da supporti fisici (USB, CD/DVD, ISO, ZIP)
 verso il PACS **Synapse Fujifilm** dell'ospedale, tramite `storescu` di dcmtk.
@@ -15,7 +18,7 @@ proxy ospedaliero.
 I valori presenti nel repository sono **segnaposto**: i parametri reali della rete non
 sono versionati. Si impostano una volta sola dall'ingranaggio in alto a destra e vengono
 salvati in `%APPDATA%\dicom-import-tool\settings.json`, fuori dal repository
-(il nome della cartella viene da `name` in `package.json`: non cambiarlo). Per
+(la cartella è fissata in `main.js`, `USER_DATA_DIR`). Per
 attrezzare più postazioni si può copiare quel file sulle altre.
 
 Finché non sono configurati, il badge in alto mostra `PACS @ 127.0.0.1:104` e l'invio
@@ -28,7 +31,7 @@ fallisce con un errore di connessione: è il segnale che la configurazione manca
 | Indirizzo PACS | `127.0.0.1` |
 | Porta | `104` |
 | storescu | incluso in `resources/dcmtk/bin`, con le sue DLL e il runtime Visual C++ (fallback: `%USERPROFILE%\Desktop\dcmtk\bin`) |
-| Staging | `C:\tmp\dicom_import` |
+| Staging | `C:\tmp\dicom_grei` |
 
 ## Flusso
 
@@ -95,10 +98,14 @@ Cosa ne è disceso nel codice:
 
 ## Log delle importazioni
 
-Ogni importazione scrive `DICOM_Import_AAAA-MM-GG_hh-mm-ss.log` nella cartella
-**`Desktop\DICOM Import Log`** (se il Desktop non è scrivibile, nel profilo
+Ogni importazione scrive `DICOM_Grei_AAAA-MM-GG_hh-mm-ss.log` nella cartella
+**`Desktop\DICOM Grei Log`** (se il Desktop non è scrivibile, nel profilo
 dell'app). Mai in `C:\tmp`, che viene svuotata. Il file si scrive mentre
 l'importazione procede: se si interrompe a metà, il log arriva fino a lì.
+
+I log delle versioni precedenti a DICOM Grei restano dov'erano, in
+`Desktop\DICOM Import Log`, con il nome `DICOM_Import_…`: l'app non li sposta
+né li cancella.
 
 Contiene: supporto e classificazione, parametri PACS, modalità di invio,
 percorso di `storescu`, tutte le righe di `storescu` con l'orario al
@@ -232,7 +239,7 @@ npm run dist         # pacchetto NSIS (richiede Windows)
 
 1. Da una macchina con `gh` + rete:
    ```bash
-   gh repo create <org>/dicom-import-tool --private --source=. --remote=origin --push
+   gh repo create <org>/dicom-grei --private --source=. --remote=origin --push
    ```
 2. Ogni push su `main` (o `workflow_dispatch`) produce l'artifact
    `DICOM Grei-Setup-<versione>.exe` (artifact `dicom-grei-setup`). Installato
@@ -254,7 +261,8 @@ riga `icon: build/icon.ico`.
 - `storescu` è invocato con `child_process.spawn` e stdout parsato riga per riga per la progress bar e il log live.
 - `storescu.exe` mancante viene segnalato **prima** della copia, non dopo minuti di lettura del CD.
 - I supporti vengono rilevati da soli all'avvio e a ogni «Nuova importazione».
-- La copia in `C:\tmp\dicom_import` avviene sempre prima dell'invio (percorsi con spazi, lettura da ottica, invio parziale su DVD danneggiati). Ogni file ha un timeout di lettura configurabile (`FILE_COPY_TIMEOUT_MS`).
+- La copia in `C:\tmp\dicom_grei` avviene sempre prima dell'invio (percorsi con spazi, lettura da ottica, invio parziale su DVD danneggiati). Ogni file ha un timeout di lettura configurabile (`FILE_COPY_TIMEOUT_MS`).
+- Lo staging delle versioni precedenti (`C:\tmp\dicom_import`, `_src`, `.day`) viene tolto dalla pulizia giornaliera, ma solo quando la sua data non è quella di oggi: su una postazione condivisa un altro utente può avere ancora la versione vecchia aperta.
 - La pulizia finale è sempre dietro conferma dell'utente.
 
 ## Limiti noti

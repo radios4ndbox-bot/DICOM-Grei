@@ -311,7 +311,7 @@ function settingsPath() {
     const { app } = require('electron');
     return path.join(app.getPath('userData'), 'settings.json');
   } catch {
-    return path.join(os.tmpdir(), 'dicom-import-settings.json');
+    return path.join(os.tmpdir(), 'dicom-grei-settings.json');
   }
 }
 

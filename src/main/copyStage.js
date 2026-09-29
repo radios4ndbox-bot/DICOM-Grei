@@ -208,7 +208,7 @@ function buildJobs(files, plan) {
 }
 
 /**
- * Copia i file dalla sorgente classificata in C:\tmp\dicom_import.
+ * Copia i file dalla sorgente classificata in C:\tmp\dicom_grei (STAGING_DIR).
  *
  * Con `parts > 1` i file vengono distribuiti a rotazione in sottocartelle
  * `part_00`, `part_01`, … : ognuna sarà inviata da un processo storescu
