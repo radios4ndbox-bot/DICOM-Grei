@@ -1,4 +1,7 @@
-# DICOM Import Tool
+# DICOM Grei
+
+(ex DICOM Import Tool: installer, cartella delle impostazioni e artifact della CI
+mantengono ancora il vecchio nome)
 
 App desktop Electron per importare studi DICOM da supporti fisici (USB, CD/DVD, ISO, ZIP)
 verso il PACS **Synapse Fujifilm** dell'ospedale, tramite `storescu` di dcmtk.
