@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const config = require('./config');
 
@@ -39,7 +39,16 @@ const PROPOSE_FLAG = {
 
 // `head` sono le opzioni prima del peer, `tail` gli argomenti posizionali dopo.
 function buildArgs(head, tail) {
-  const args = ['-v', ...head, PROPOSE_FLAG[config.PROPOSE_TS] || PROPOSE_FLAG.lossless];
+  // --no-halt: di default storescu si FERMA al primo file che il PACS non
+  // accetta ("do halt if unsuccessful store encountered"). Misurato contro
+  // storescp (29/09/2026): un solo file con SOP class rifiutata su 401
+  // lasciava 350 file non tentati; con 5 rifiutati su 405 servivano tutti e
+  // tre i ritentativi (713 reinvii) e le loro attese di 10/30/60 s, cioè la
+  // barra ferma per quasi due minuti. Un CD vero porta spesso oggetti che il
+  // PACS può rifiutare (SR, PDF incapsulati, oggetti privati del
+  // visualizzatore). Con --no-halt quel file viene segnato e si prosegue:
+  // lo stesso invio arriva 400/400 al primo passaggio, zero ritentativi.
+  const args = ['-v', '--no-halt', ...head, PROPOSE_FLAG[config.PROPOSE_TS] || PROPOSE_FLAG.lossless];
 
   // Senza questi, DCMTK aspetta il PACS all'infinito (default: unlimited).
   // Si possono togliere per riprodurre esattamente un lancio a mano da cmd:
@@ -96,6 +105,44 @@ function preflightSend(pattern) {
   if (!ALLOWED_PATTERNS.includes(pattern)) {
     throw new Error(`scan-pattern non consentito: "${pattern}". Ammessi solo "MP*" o "*.dcm".`);
   }
+  checkStorescuStarts();
+}
+
+// Codice con cui Windows chiude un processo a cui manca una DLL all'avvio.
+const STATUS_DLL_NOT_FOUND = 0xc0000135;
+
+// L'avvio si prova una volta sola per sessione dell'app: se è partito una
+// volta, le DLL ci sono.
+let storescuStarts = false;
+
+/**
+ * storescu.exe esiste, ma parte?
+ *
+ * Il binario incluso (DCMTK 3.7.0, build dinamica) dipende dal runtime di
+ * Visual C++ 2015-2022 (MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll),
+ * che NON fa parte di Windows e non è nella cartella dcmtk. Su una postazione
+ * che non ce l'ha, Windows chiude storescu all'istante con 0xC0000135 e
+ * nessun messaggio: l'invio risultava "associazione caduta", ritentava dopo
+ * 10 s e si arrendeva con 0 file inviati, senza dire perché. Si scopre qui,
+ * prima di leggere il CD.
+ */
+function checkStorescuStarts() {
+  if (storescuStarts) return;
+  const r = spawnSync(config.STORESCU, ['--version'], { windowsHide: true, timeout: 10000, encoding: 'utf8' });
+  const code = r.status == null ? null : r.status >>> 0;
+  if (!r.error && code === 0 && /storescu/i.test(`${r.stdout}${r.stderr}`)) {
+    storescuStarts = true;
+    return;
+  }
+  if (code === STATUS_DLL_NOT_FOUND) {
+    throw new Error(
+      'storescu.exe non parte: manca una DLL. Quasi certamente il runtime Microsoft Visual C++ ' +
+        '2015-2022 x64 (MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll) non è installato su ' +
+        `questa postazione. storescu: ${config.STORESCU}`
+    );
+  }
+  const why = r.error ? r.error.message : `codice di uscita ${code == null ? '—' : '0x' + code.toString(16)}`;
+  throw new Error(`storescu.exe non parte (${why}): ${config.STORESCU}`);
 }
 
 /**

@@ -196,6 +196,14 @@ di capire perché. Le difese, in ordine:
 5. **«Interrompi» immediato**, in copia come in invio, anche durante l'attesa
    fra due ritentativi.
 
+**Un file rifiutato non ferma più l'invio.** Di suo `storescu` si ferma al
+primo file che il PACS non accetta (SR, PDF incapsulato, oggetto privato del
+visualizzatore…) e tutto il resto passava ai ritentativi, con le loro attese
+di 10/30/60 s: barra ferma per minuti. L'app passa `--no-halt`: il file
+rifiutato viene segnato fra i falliti definitivi e l'invio prosegue. Misurato
+contro `storescp`: 5 file rifiutati su 405 costavano 713 reinvii e tutti e
+tre i ritentativi, ora 400/400 al primo passaggio.
+
 Nessun processo `storescu` sopravvive alla fine dell'invio, alla chiusura della
 finestra o a un errore: se uno dei processi paralleli fallisce, gli altri
 vengono abbattuti invece di restare a scrivere sul PACS scollegati dall'app.
