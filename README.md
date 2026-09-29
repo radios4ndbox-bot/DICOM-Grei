@@ -1,7 +1,7 @@
 # DICOM Grei
 
-(ex DICOM Import Tool: installer, cartella delle impostazioni e artifact della CI
-mantengono ancora il vecchio nome)
+(ex DICOM Import Tool: la cartella delle impostazioni mantiene il vecchio nome,
+`dicom-import-tool`, così le postazioni già configurate non perdono niente)
 
 App desktop Electron per importare studi DICOM da supporti fisici (USB, CD/DVD, ISO, ZIP)
 verso il PACS **Synapse Fujifilm** dell'ospedale, tramite `storescu` di dcmtk.
@@ -14,7 +14,8 @@ proxy ospedaliero.
 
 I valori presenti nel repository sono **segnaposto**: i parametri reali della rete non
 sono versionati. Si impostano una volta sola dall'ingranaggio in alto a destra e vengono
-salvati in `%APPDATA%\dicom-import-tool\settings.json`, fuori dal repository. Per
+salvati in `%APPDATA%\dicom-import-tool\settings.json`, fuori dal repository
+(il nome della cartella viene da `name` in `package.json`: non cambiarlo). Per
 attrezzare più postazioni si può copiare quel file sulle altre.
 
 Finché non sono configurati, il badge in alto mostra `PACS @ 127.0.0.1:104` e l'invio
@@ -234,7 +235,8 @@ npm run dist         # pacchetto NSIS (richiede Windows)
    gh repo create <org>/dicom-import-tool --private --source=. --remote=origin --push
    ```
 2. Ogni push su `main` (o `workflow_dispatch`) produce l'artifact
-   `DICOM Import Tool-Setup-<versione>.exe`.
+   `DICOM Grei-Setup-<versione>.exe` (artifact `dicom-grei-setup`). Installato
+   sopra una versione «DICOM Import Tool», la aggiorna al suo posto.
 3. Un tag `vX.Y.Z` pubblica anche una GitHub Release.
 4. Consigliato: da quella macchina, `npm install` una volta e committare il
    `package-lock.json` per build riproducibili.

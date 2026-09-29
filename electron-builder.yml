@@ -1,5 +1,10 @@
 appId: it.desio.dicomimporttool
-productName: DICOM Import Tool
+# Nome visibile: installer, exe, collegamenti. La cartella delle impostazioni
+# (%APPDATA%\dicom-import-tool\settings.json) NON dipende da qui ma da "name"
+# in package.json, che non va cambiato: electron-builder non copia productName
+# nel package.json dell'app. appId fisso: l'installer nuovo aggiorna quello
+# vecchio e resta nella cartella di installazione già registrata.
+productName: DICOM Grei
 copyright: Desio
 
 asar: false

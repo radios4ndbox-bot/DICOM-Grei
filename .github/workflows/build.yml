@@ -25,7 +25,7 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dicom-import-tool-setup
+          name: dicom-grei-setup
           path: dist/*.exe
           if-no-files-found: error
 
