@@ -16,8 +16,10 @@ files:
 
 # App autosufficiente: resources/dcmtk/bin contiene storescu.exe (DCMTK
 # 3.7.0 win64) + le sue DLL (dcmnet, dcmdata, dcmtls, oflog, ofstd,
-# oficonv). Vengono copiate in <resources>/dcmtk; config.js risolve
-# process.resourcesPath/dcmtk/bin/storescu.exe.
+# oficonv) + il runtime Visual C++ (msvcp140, vcruntime140,
+# vcruntime140_1), che non fa parte di Windows e sulle postazioni senza
+# permessi di amministratore non si può installare. Vengono copiate in
+# <resources>/dcmtk; config.js risolve process.resourcesPath/dcmtk/bin/storescu.exe.
 extraResources:
   - from: resources/dcmtk
     to: dcmtk

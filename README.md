@@ -23,7 +23,7 @@ fallisce con un errore di connessione: è il segnale che la configurazione manca
 | AET destinazione | `PACS` |
 | Indirizzo PACS | `127.0.0.1` |
 | Porta | `104` |
-| storescu | incluso in `resources/dcmtk/bin` (fallback: `%USERPROFILE%\Desktop\dcmtk\bin`) |
+| storescu | incluso in `resources/dcmtk/bin`, con le sue DLL e il runtime Visual C++ (fallback: `%USERPROFILE%\Desktop\dcmtk\bin`) |
 | Staging | `C:\tmp\dicom_import` |
 
 ## Flusso

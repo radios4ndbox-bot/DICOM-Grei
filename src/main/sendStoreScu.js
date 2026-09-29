@@ -120,11 +120,13 @@ let storescuStarts = false;
  *
  * Il binario incluso (DCMTK 3.7.0, build dinamica) dipende dal runtime di
  * Visual C++ 2015-2022 (MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll),
- * che NON fa parte di Windows e non è nella cartella dcmtk. Su una postazione
- * che non ce l'ha, Windows chiude storescu all'istante con 0xC0000135 e
- * nessun messaggio: l'invio risultava "associazione caduta", ritentava dopo
- * 10 s e si arrendeva con 0 file inviati, senza dire perché. Si scopre qui,
- * prima di leggere il CD.
+ * che non fa parte di Windows: per questo le tre DLL stanno accanto a
+ * storescu.exe in resources/dcmtk/bin, e Windows le prende da lì prima che
+ * dal sistema. Se una DLL manca comunque (installazione incompleta, un
+ * antivirus che ne ha messa in quarantena una), Windows chiude storescu
+ * all'istante con 0xC0000135 e nessun messaggio: l'invio risultava
+ * "associazione caduta", ritentava dopo 10 s e si arrendeva con 0 file
+ * inviati, senza dire perché. Si scopre qui, prima di leggere il CD.
  */
 function checkStorescuStarts() {
   if (storescuStarts) return;
@@ -136,9 +138,9 @@ function checkStorescuStarts() {
   }
   if (code === STATUS_DLL_NOT_FOUND) {
     throw new Error(
-      'storescu.exe non parte: manca una DLL. Quasi certamente il runtime Microsoft Visual C++ ' +
-        '2015-2022 x64 (MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll) non è installato su ' +
-        `questa postazione. storescu: ${config.STORESCU}`
+      'storescu.exe non parte: manca una DLL. Controllare che nella sua cartella ci siano ' +
+        'dcmdata, dcmnet, dcmtls, oflog, ofstd, oficonv, MSVCP140, VCRUNTIME140 e VCRUNTIME140_1 ' +
+        `(.dll), o reinstallare l'app; l'antivirus può averne messa in quarantena una. storescu: ${config.STORESCU}`
     );
   }
   const why = r.error ? r.error.message : `codice di uscita ${code == null ? '—' : '0x' + code.toString(16)}`;
