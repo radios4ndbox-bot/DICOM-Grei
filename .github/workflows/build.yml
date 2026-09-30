@@ -19,10 +19,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: DCMTK tools (dcmdjpeg, dcmdjpls, dcmdump)
-        shell: pwsh
-        run: ./build/fetch-dcmtk-tools.ps1
-
       - name: Package (electron-builder)
         run: npm run dist
 
@@ -47,10 +43,6 @@ jobs:
           node-version: 24
 
       - run: npm install
-      - name: DCMTK tools (dcmdjpeg, dcmdjpls, dcmdump)
-        shell: pwsh
-        run: ./build/fetch-dcmtk-tools.ps1
-
       - run: npm run dist
 
       - name: Publish GitHub Release
