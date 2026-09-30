@@ -27,11 +27,10 @@ function resolveStorescu() {
 
 module.exports = {
   // Parametri PACS Synapse Fujifilm — segnaposto, i veri stanno in settings.json.
-  // SRC_AET resta DICOM_IMPORT anche dopo il cambio di nome: è l'AE title con
-  // cui la postazione si presenta al PACS, e un PACS che conosce questo nome
-  // rifiuterebbe un "DICOM_GREI" dopo un «Ripristina predefiniti».
-  SRC_AET: 'DICOM_IMPORT',
-  DEST_AET: 'PACS',
+  // AE title: quelli predefiniti di storescu, cioè quelli con cui partono gli
+  // invii lanciati a mano da cmd senza -aet/-aec (vedi settings.js, DEFAULTS).
+  SRC_AET: 'STORESCU',
+  DEST_AET: 'ANY-SCP',
   PACS_IP: '127.0.0.1',
   PACS_PORT: '104',
 

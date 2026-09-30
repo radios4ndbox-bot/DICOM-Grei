@@ -1,10 +1,9 @@
 # DICOM Grei
 
-(ex DICOM Import Tool. Del nome vecchio restano solo tre cose, apposta: la
-cartella delle impostazioni `%APPDATA%\dicom-import-tool`, l'`appId` dell'installer
-e l'AE title sorgente predefinito `DICOM_IMPORT`. Cambiarle romperebbe le
-postazioni già configurate: parametri del PACS persi, versione vecchia installata
-accanto alla nuova, PACS che non riconosce la postazione.)
+(ex DICOM Import Tool. Del nome vecchio restano solo due cose, apposta: la
+cartella delle impostazioni `%APPDATA%\dicom-import-tool` e l'`appId`
+dell'installer. Cambiarle romperebbe le postazioni già configurate: parametri del
+PACS persi, versione vecchia installata accanto alla nuova.)
 
 App desktop Electron per importare studi DICOM da supporti fisici (USB, CD/DVD, ISO, ZIP)
 verso il PACS **Synapse Fujifilm** dell'ospedale, tramite `storescu` di dcmtk.
@@ -48,8 +47,8 @@ l'avvio: viene ignorato e segnalato nel dialogo delle impostazioni e nel log.
 
 | | predefinito nel repo |
 |---|---|
-| AET sorgente | `DICOM_IMPORT` |
-| AET destinazione | `PACS` |
+| AET sorgente | `STORESCU` (il predefinito di storescu) |
+| AET destinazione | `ANY-SCP` (il predefinito di storescu) |
 | Indirizzo PACS | `127.0.0.1` |
 | Porta | `104` |
 | storescu | incluso in `resources/dcmtk/bin`, con le sue DLL e il runtime Visual C++ (fallback: `%USERPROFILE%\Desktop\dcmtk\bin`) |
@@ -240,10 +239,25 @@ tre i ritentativi, ora 400/400 al primo passaggio.
 **Un PACS che rifiuta non è un PACS muto.** Il 30/09/2026 Synapse ha
 accettato il primo file e rifiutato tutti gli altri con
 `Received Store Response (Refused: OutOfResources)`, e l'app lo ha descritto
-come «storescu non ha segnalato risposte» e «il PACS non rispondeva più». La
-causa era il CD: danneggiato, il PACS non riusciva a indicizzarne l'esame, e
-rifiutava allo stesso modo lo stesso invio lanciato da `cmd`, con qualunque AE
-title e anche con le immagini decompresse. Ora:
+come «storescu non ha segnalato risposte» e «il PACS non rispondeva più».
+
+La causa erano **gli AE title**. Fino ad allora l'app si presentava con i
+segnaposto `DICOM_IMPORT` → `PACS`; gli invii a mano da `cmd` non passano
+`-aet`/`-aec`, cioè usano quelli di storescu, `STORESCU` → `ANY-SCP`. Lo
+stesso pomeriggio un esame nuovo per il Synapse è stato rifiutato file per file
+dall'app e accettato poco dopo per intero da `cmd`. L'associazione viene
+accettata in entrambi i casi: il rifiuto arriva solo sulle singole immagini, ed
+è per questo che sembrava un problema dell'invio. (Il CD del mattino era già nel
+Synapse, importato il giorno prima con un altro programma: lì anche `cmd` veniva
+rifiutato, e le prove su quel CD non potevano distinguere.)
+
+- **Predefiniti** ora `STORESCU` / `ANY-SCP`, come da `cmd`.
+- **Postazioni già configurate**: il salvataggio scrive tutti i campi, quindi
+  la coppia `DICOM_IMPORT`/`PACS` è rimasta nei `settings.json`. Se l'app la
+  trova esatta la sostituisce all'avvio, e lo dice nelle impostazioni e nel
+  log; un AE title impostato davvero non si tocca.
+
+Il riepilogo, poi, ora racconta come stanno le cose:
 
 - il riepilogo e il log dicono quanti file non sono passati **per stato**
   (es. `3554 × Refused: OutOfResources`), con le parole del PACS;

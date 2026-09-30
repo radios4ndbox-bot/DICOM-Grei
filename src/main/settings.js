@@ -215,8 +215,14 @@ const SCHEMA = [
 const DEFAULTS = {
   PACS_IP: '127.0.0.1',
   PACS_PORT: 104,
-  DEST_AET: 'PACS',
-  SRC_AET: 'DICOM_IMPORT',
+  // I predefiniti di storescu (-aet STORESCU, -aec ANY-SCP): gli stessi di un
+  // invio lanciato a mano da cmd senza AE title. Il 30/09/2026 il Synapse ha
+  // rifiutato con 0xA700 "Refused: Out of resources" ogni immagine di un esame
+  // nuovo mandato con DICOM_IMPORT/PACS, i segnaposto usati fino ad allora, e
+  // ha accettato poco dopo lo stesso esame con STORESCU/ANY-SCP. Associazione
+  // accettata in entrambi i casi: il rifiuto arriva solo sui singoli file.
+  DEST_AET: 'ANY-SCP',
+  SRC_AET: 'STORESCU',
   DIMSE_TIMEOUT_S: 60,
   ACSE_TIMEOUT_S: 30,
   CONNECT_TIMEOUT_S: 30,
@@ -236,6 +242,9 @@ const DEFAULTS = {
   COPY_CONCURRENCY_FAST: 8,
   COPY_CONCURRENCY_OPTICAL: 2,
 };
+
+// I segnaposto usati fino al 30/09/2026 (vedi DEFAULTS e load()).
+const LEGACY_AET = { SRC_AET: 'DICOM_IMPORT', DEST_AET: 'PACS' };
 
 const FIELDS = new Map();
 for (const s of SCHEMA) for (const f of s.fields) FIELDS.set(f.key, f);
@@ -466,6 +475,19 @@ function load() {
 
   // un file manomesso o di una versione precedente non deve rompere l'avvio
   const { values } = validate(chosen ? chosen.data : {}, DEFAULTS);
+  // Le postazioni configurate prima del 30/09/2026 hanno salvato i vecchi
+  // segnaposto (il salvataggio scrive tutti i campi), coi quali il Synapse
+  // rifiuta le immagini. La coppia esatta non è una configurazione voluta da
+  // nessuno: si sostituisce con i predefiniti di storescu. Un AE title
+  // impostato davvero, anche uno solo dei due, non si tocca.
+  if (values.SRC_AET === LEGACY_AET.SRC_AET && values.DEST_AET === LEGACY_AET.DEST_AET) {
+    values.SRC_AET = DEFAULTS.SRC_AET;
+    values.DEST_AET = DEFAULTS.DEST_AET;
+    warnings.push(
+      `AE title ${LEGACY_AET.SRC_AET}/${LEGACY_AET.DEST_AET} (vecchi segnaposto) sostituiti con ` +
+        `${DEFAULTS.SRC_AET}/${DEFAULTS.DEST_AET}: salvare le impostazioni per renderlo definitivo.`
+    );
+  }
   current = values;
   apply();
   status = { source: chosen ? chosen.kind : 'default', file: chosen ? chosen.path : null, warnings };
