@@ -329,14 +329,25 @@ ipcMain.handle('run-import', async (_e, opts) => {
       log.line(`Invio   ${formatDuration(timing.sendSec)} · ${formatBytes(timing.sendBytes)} · ${mbps(timing.sendBytes, timing.sendSec)}`);
     }
     log.line(`Totale  ${formatDuration(timing.totalSec)}`);
-    if (result.interrupted) log.line('Esito: INTERROTTA, staging azzerato');
+    const gaveUpText = {
+      mute: ', ritentativi interrotti (PACS muto)',
+      refused: ', ritentativi interrotti (il PACS rifiuta i file)',
+      silent: ', ritentativi interrotti (nessuna risposta riconoscibile)',
+    };
+    if (result.interrupted && result.stagingKept) log.line('Esito: INVIO INTERROTTO, file lasciati in staging');
+    else if (result.interrupted) log.line('Esito: INTERROTTA, staging azzerato');
     else if (result.error) log.line('Esito: ERRORE — ' + result.error);
-    else if (result.send) {
+    if (result.send && !result.error) {
       const s = result.send;
       log.line(
         `Esito: ${s.success} inviati, ${s.failed} falliti` +
-          `${s.retried ? `, ${s.retried} ritentati` : ''}${s.gaveUp ? ', ritentativi interrotti (PACS muto)' : ''}`
+          `${s.retried ? `, ${s.retried} ritentati` : ''}${gaveUpText[s.gaveUp] || ''}`
       );
+    }
+    // Perché i file non sono passati, con le parole del PACS o di storescu.
+    // Sono stati DICOM, non dati del paziente.
+    if (result.send && result.send.failureStatuses) {
+      for (const [st, n] of Object.entries(result.send.failureStatuses)) log.line(`  non inviati · ${st}: ${n}`);
     }
     return { ...result, timing, logPath: log.path };
   };
@@ -408,12 +419,14 @@ ipcMain.handle('run-import', async (_e, opts) => {
     timing.sendSec = send.elapsedSec;
     timing.sendBytes = send.bytes || 0;
 
-    // Invio interrotto (operatore o RIS): lo staging resta a metà, va azzerato.
-    // L'ISO resta montata di proposito, così si può ripartire senza rileggere il
-    // supporto; viene smontata dalla pulizia finale.
+    // Invio interrotto dall'operatore. La copia era finita, quindi lo staging
+    // è completo e si lascia com'è: «Copia comando» deve poter rilanciare da
+    // cmd lo stesso invio sugli stessi file, ed è proprio dopo un invio andato
+    // male che serve. Prima qui si azzerava, e la riga copiata non trovava più
+    // niente (30/09/2026). Lo toglie «Pulisci», la prossima importazione o la
+    // pulizia giornaliera. L'ISO resta montata, come prima.
     if (send.cancelled) {
-      const reset = await cleanup({});
-      return finish({ copy, send, iso, interrupted: true, reset });
+      return finish({ copy, send, iso, interrupted: true, stagingKept: true });
     }
 
     return finish({ copy, send, iso, workers, turbo, mode });
@@ -442,7 +455,8 @@ ipcMain.handle('copy-command', () => {
 });
 
 // Interruzione dell'invio in corso. Il chiamante riceve comunque il risultato
-// da 'run-import', con interrupted:true e lo staging già ripulito.
+// da 'run-import', con interrupted:true: durante la copia lo staging viene
+// ripulito, durante l'invio resta (stagingKept) per «Copia comando».
 ipcMain.handle('stop-import', () => {
   if (!session.busy) return { stopped: false };
   // vale sia durante la copia (controllata file per file) sia durante l'invio

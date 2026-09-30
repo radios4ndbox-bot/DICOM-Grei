@@ -645,7 +645,14 @@ async function startImport() {
 }
 
 $('btn-stop').addEventListener('click', async () => {
-  if (!confirm("Interrompere il trasferimento in corso?\nLo staging verrà azzerato automaticamente.")) return;
+  if (
+    !confirm(
+      'Interrompere il trasferimento in corso?\n' +
+        'Durante la copia lo staging viene azzerato; durante l\'invio i file restano in staging, ' +
+        'per rilanciarli con «Copia comando».'
+    )
+  )
+    return;
   $('btn-stop').disabled = true;
   $('phase-label').textContent = 'Interruzione in corso…';
   try {
@@ -767,21 +774,32 @@ function onImportDone(result) {
 
   const notes = [];
   if (result.error) notes.push(result.error);
-  if (result.interrupted) {
+  if (result.interrupted && result.stagingKept) {
+    notes.push('Invio interrotto: i file restano in staging, «Copia comando» li rilancia da cmd.');
+  } else if (result.interrupted) {
     notes.push('Trasferimento interrotto: lo staging è già stato azzerato, si può ripartire da capo.');
   }
   if (s.retried) notes.push(`${s.retried} file ritentati automaticamente.`);
-  if (s.gaveUp) {
+  if (s.gaveUp === 'mute') {
     notes.push(
       'Ritentativi interrotti: il PACS non rispondeva più. Verificare rete e stato ' +
         'dell\'esame, poi rilanciare l\'importazione.'
     );
+  } else if (s.gaveUp === 'refused') {
+    notes.push(
+      'Ritentativi interrotti: il PACS risponde ma rifiuta i file. Il problema è dal lato del PACS, ' +
+        'non della rete: rilanciare con «Copia comando» da cmd e, se il rifiuto si ripete, ' +
+        'segnalarlo all\'amministratore del PACS con il log.'
+    );
+  } else if (s.gaveUp) {
+    notes.push('Ritentativi interrotti: nessuna risposta riconoscibile da storescu. Vedere il log.');
   }
   if (s.stallKills) {
     notes.push(`${s.stallKills} associazione/i abbattuta/e perché mute.`);
   }
-  if (s.failedFiles && s.failedFiles.length) {
-    notes.push(`${s.failedFiles.length} file non recuperabili (formato o SOP class non accettata dal PACS).`);
+  const statuses = Object.entries(s.failureStatuses || {});
+  if (statuses.length) {
+    notes.push('Non inviati: ' + statuses.map(([st, n]) => `${n} × ${st}`).join(', ') + '.');
   }
   if (result.copy && result.copy.recovered) {
     notes.push(`${result.copy.recovered} file recuperati al secondo tentativo di lettura.`);
@@ -807,14 +825,14 @@ function onImportDone(result) {
   $('summary').classList.remove('hidden');
   // sempre disponibile, anche quando il trasferimento è fallito o interrotto
   $('btn-cleanup').classList.remove('hidden');
-  $('btn-cleanup').disabled = !!result.interrupted;
+  $('btn-cleanup').disabled = !!result.interrupted && !result.stagingKept;
   $('btn-restart').classList.remove('hidden');
   $('btn-cleanup').dataset.iso = result.iso || '';
   // lo staging resta sul disco per la giornata: la riga copiata si può
   // rilanciare da cmd sugli stessi file, per confrontare come si deve
   if (result.send) $('btn-copy-cmd').classList.remove('hidden');
 
-  if (result.interrupted) {
+  if (result.interrupted && !result.stagingKept) {
     $('cleanup-status').textContent = 'Staging azzerato automaticamente dopo l’interruzione.';
   }
 }

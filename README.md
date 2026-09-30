@@ -237,6 +237,25 @@ rifiutato viene segnato fra i falliti definitivi e l'invio prosegue. Misurato
 contro `storescp`: 5 file rifiutati su 405 costavano 713 reinvii e tutti e
 tre i ritentativi, ora 400/400 al primo passaggio.
 
+**Un PACS che rifiuta non è un PACS muto.** Il 30/09/2026 Synapse ha
+accettato il primo file e rifiutato tutti gli altri con
+`Received Store Response (Refused: OutOfResources)`, e l'app lo ha descritto
+come «storescu non ha segnalato risposte» e «il PACS non rispondeva più». Ora:
+
+- il riepilogo e il log dicono quanti file non sono passati **per stato**
+  (es. `3554 × Refused: OutOfResources`), con le parole del PACS;
+- i ritentativi si fermano dopo un giro in cui nessun file in più è passato,
+  e dicono se il PACS era muto o se ha risposto rifiutando;
+- l'elenco dei file non inviati li comprende tutti, anche quelli che un giro
+  interrotto non aveva ancora ritentato;
+- stdout e stderr di `storescu` si leggono su due buffer separati: prima un
+  avviso di stderr poteva finire in mezzo a una riga di stdout
+  (`XMIT: W: …`) e rendere irriconoscibile la risposta del PACS;
+- interrompendo durante l'**invio**, i file restano in staging: «Copia
+  comando» li rilancia da `cmd`. Prima lo staging veniva azzerato e la riga
+  copiata non trovava più niente. Interrompendo durante la **copia** lo
+  staging viene ancora azzerato, perché è incompleto.
+
 Nessun processo `storescu` sopravvive alla fine dell'invio, alla chiusura della
 finestra o a un errore: se uno dei processi paralleli fallisce, gli altri
 vengono abbattuti invece di restare a scrivere sul PACS scollegati dall'app.

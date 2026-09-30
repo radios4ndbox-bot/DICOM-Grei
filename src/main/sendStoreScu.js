@@ -265,7 +265,6 @@ function runStorescu(args, { onLog, onFile, register }) {
       return reject(err);
     }
 
-    let buf = '';
     let current = null;
     let killed = false;
     let stallKilled = false;
@@ -369,22 +368,40 @@ function runStorescu(args, { onLog, onFile, register }) {
       }
     };
 
-    const onChunk = (chunk) => {
-      lastByte = Date.now();
-      buf += chunk.toString();
-      // una riga patologicamente lunga non deve far crescere il buffer all'infinito
-      if (buf.length > 1024 * 1024) buf = buf.slice(-4096);
-      const parts = buf.split(/\r?\n/);
-      buf = parts.pop();
-      for (const p of parts) handleLine(p.trim());
+    // Un buffer per flusso. Con uno solo, condiviso, le righe dei due flussi
+    // si mescolavano: storescu scrive "XMIT:" e i puntini dell'avanzamento
+    // senza andare a capo, e un avviso arrivato nel frattempo dall'altro
+    // flusso finiva in mezzo ("XMIT: W: DcmUniqueIdentifier ..." nel log del
+    // 30/09/2026). Una risposta del PACS incollata a un pezzo d'altra riga non
+    // veniva più riconosciuta, e il file risultava mai tentato.
+    const lineReader = () => {
+      let buf = '';
+      return {
+        chunk(chunk) {
+          lastByte = Date.now();
+          buf += chunk.toString();
+          // una riga patologicamente lunga non deve far crescere il buffer all'infinito
+          if (buf.length > 1024 * 1024) buf = buf.slice(-4096);
+          const parts = buf.split(/\r?\n/);
+          buf = parts.pop();
+          for (const p of parts) handleLine(p.trim());
+        },
+        flush() {
+          if (buf.trim()) handleLine(buf.trim());
+          buf = '';
+        },
+      };
     };
+    const out = lineReader();
+    const err = lineReader();
 
-    if (child.stdout) child.stdout.on('data', onChunk);
-    if (child.stderr) child.stderr.on('data', onChunk);
+    if (child.stdout) child.stdout.on('data', (c) => out.chunk(c));
+    if (child.stderr) child.stderr.on('data', (c) => err.chunk(c));
 
-    child.on('error', (err) => done(reject, err));
+    child.on('error', (e) => done(reject, e));
     child.on('close', (code) => {
-      if (buf.trim()) handleLine(buf.trim());
+      out.flush();
+      err.flush();
       done(resolve, { exitCode: code, killed, stallKilled });
     });
   });
@@ -449,6 +466,10 @@ function sendStoreScu(opts, emit) {
     stallKills: 0,
     permanentFailures: [],
     failedFiles: [],
+    // file non inviati per stato riportato dal PACS o da storescu,
+    // es. { 'Refused: OutOfResources': 3554 }
+    failureStatuses: {},
+    gaveUp: null, // null | 'mute' | 'refused' | 'silent'
   };
 
   const startedAt = Date.now();
@@ -465,7 +486,10 @@ function sendStoreScu(opts, emit) {
   const outcomes = new Map(); // key -> true|false
   let retryQueue = new Map(); // key -> percorso originale
   const permanent = new Map();
+  const pathOf = new Map(); // key -> percorso, per l'elenco finale dei falliti
+  const statusOf = new Map(); // key -> ultimo stato non riuscito
   let anon = 0;
+  let refusedInRound = 0; // risposte non riuscite arrivate nel giro corrente
 
   const setOutcome = (key, ok) => {
     const prev = outcomes.get(key);
@@ -487,6 +511,25 @@ function sendStoreScu(opts, emit) {
       }
     }
     outcomes.set(key, ok);
+  };
+
+  // Stato di rifiuto più frequente fra i file ancora non inviati.
+  const mainStatus = () => {
+    const n = new Map();
+    for (const [key, ok] of outcomes) {
+      if (ok) continue;
+      const st = statusOf.get(key) || 'sconosciuto';
+      n.set(st, (n.get(st) || 0) + 1);
+    }
+    let best = 'sconosciuto';
+    let max = 0;
+    for (const [st, c] of n) {
+      if (c > max) {
+        best = st;
+        max = c;
+      }
+    }
+    return best;
   };
 
   // Byte per file, dallo staging. L'ETA si fa sui byte e non sul numero di
@@ -545,10 +588,16 @@ function sendStoreScu(opts, emit) {
     const key = usable ? norm(r.file) : `__anon_${anon++}`;
 
     setOutcome(key, !!r.ok);
+    if (usable) pathOf.set(key, r.file);
 
     if (r.ok) {
       retryQueue.delete(key);
-    } else if (usable) {
+      statusOf.delete(key);
+    } else {
+      statusOf.set(key, r.status || 'sconosciuto');
+      refusedInRound++;
+    }
+    if (!r.ok && usable) {
       if (r.permanent) {
         permanent.set(key, r.file);
         retryQueue.delete(key);
@@ -713,8 +762,9 @@ function sendStoreScu(opts, emit) {
 
       emitProgress();
 
-      const before = state.success + state.failed;
+      const successBefore = state.success;
       const killsBefore = state.stallKills;
+      refusedInRound = 0;
 
       // Di norma si tiene il parallelismo del passaggio principale: un
       // ritentativo su qualche migliaio di file non deve costare più
@@ -744,30 +794,51 @@ function sendStoreScu(opts, emit) {
       );
       await collectUnattempted();
 
-      // Un giro intero senza che UN SOLO file si muova. Rifarlo con gli stessi
-      // argomenti costerebbe solo altri minuti di attesa a vuoto: si chiude
-      // qui, dicendo perché, invece di tenere l'operatore davanti a una barra
-      // ferma. Vale sia quando le associazioni sono state abbattute perché
-      // mute, sia quando storescu è uscito senza produrre risposte
-      // riconoscibili: in entrambi i casi insistere non cambia l'esito.
-      if (state.success + state.failed === before) {
-        const mute = state.stallKills > killsBefore;
-        emit({
-          type: 'log',
-          line: mute
-            ? '> il PACS non risponde: ritentativi interrotti. ' +
-              'Verificare la rete o che l\'esame non sia aperto in refertazione, poi riprovare.'
-            : '> nessun file è passato in questo giro e storescu non ha segnalato risposte: ' +
-              'ritentativi interrotti. Con «Copia comando» si può rilanciare la stessa riga in cmd e confrontare.',
-        });
-        state.gaveUp = true;
+      // Un giro intero senza che UN SOLO file in più arrivi al PACS. Rifarlo
+      // con gli stessi argomenti costerebbe solo altri minuti: si chiude qui,
+      // dicendo perché. Prima si guardava se i contatori si muovevano, ma un
+      // file rifiutato di nuovo non li muove (era già fra i falliti): così un
+      // PACS che rifiutava ogni file veniva descritto come un PACS che "non
+      // ha segnalato risposte" (30/09/2026, 3554 "Refused: OutOfResources").
+      if (!cancelled && state.success === successBefore) {
+        let why;
+        if (state.stallKills > killsBefore) {
+          state.gaveUp = 'mute';
+          why =
+            '> il PACS non risponde: ritentativi interrotti. ' +
+            "Verificare la rete o che l'esame non sia aperto in refertazione, poi riprovare.";
+        } else if (refusedInRound > 0) {
+          state.gaveUp = 'refused';
+          why =
+            `> il PACS ha risposto e ha rifiutato di nuovo i file (${mainStatus()}): ritentativi interrotti. ` +
+            'Il rifiuto viene dal PACS, non dalla rete né da storescu.';
+        } else {
+          state.gaveUp = 'silent';
+          why =
+            '> nessun file è passato in questo giro e storescu non ha dato risposte riconoscibili: ' +
+            'ritentativi interrotti. Con «Copia comando» si può rilanciare la stessa riga in cmd e confrontare.';
+        }
+        emit({ type: 'log', line: why });
         break;
       }
     }
 
     stalled = false;
     state.cancelled = cancelled;
-    state.failedFiles = [...retryQueue.values(), ...permanent.values()];
+    // Tutti i file il cui ultimo esito è negativo. Prima erano solo quelli
+    // rimasti nella coda dell'ultimo giro: un giro interrotto a metà faceva
+    // sparire dall'elenco i falliti non ancora ritentati (633 elencati su
+    // 3554 falliti, 30/09/2026).
+    const failed = [];
+    const statuses = {};
+    for (const [key, ok] of outcomes) {
+      if (ok) continue;
+      if (pathOf.has(key)) failed.push(pathOf.get(key));
+      const st = statusOf.get(key) || 'sconosciuto';
+      statuses[st] = (statuses[st] || 0) + 1;
+    }
+    state.failedFiles = failed;
+    state.failureStatuses = statuses;
     state.permanentFailures = [...permanent.values()];
     state.elapsedSec = Math.round((Date.now() - startedAt) / 1000);
     state.bytes = doneBytes;
