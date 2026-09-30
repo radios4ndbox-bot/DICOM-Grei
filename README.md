@@ -240,7 +240,10 @@ tre i ritentativi, ora 400/400 al primo passaggio.
 **Un PACS che rifiuta non è un PACS muto.** Il 30/09/2026 Synapse ha
 accettato il primo file e rifiutato tutti gli altri con
 `Received Store Response (Refused: OutOfResources)`, e l'app lo ha descritto
-come «storescu non ha segnalato risposte» e «il PACS non rispondeva più». Ora:
+come «storescu non ha segnalato risposte» e «il PACS non rispondeva più». La
+causa era il CD: danneggiato, il PACS non riusciva a indicizzarne l'esame, e
+rifiutava allo stesso modo lo stesso invio lanciato da `cmd`, con qualunque AE
+title e anche con le immagini decompresse. Ora:
 
 - il riepilogo e il log dicono quanti file non sono passati **per stato**
   (es. `3554 × Refused: OutOfResources`), con le parole del PACS;
