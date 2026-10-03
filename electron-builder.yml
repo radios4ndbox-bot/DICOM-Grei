@@ -19,6 +19,18 @@ files:
   - build/icon.ico
   - package.json
   - node_modules/dicom-parser/**/*
+  # Codec del viewer (dicomDecode.js). Solo ciò che gira: di ogni pacchetto
+  # il decoder e il suo .wasm, non i sorgenti, i test e gli encoder.
+  - node_modules/jpeg-lossless-decoder-js/package.json
+  - node_modules/jpeg-lossless-decoder-js/LICENSE
+  - node_modules/jpeg-lossless-decoder-js/release/cjs/**/*
+  - node_modules/@cornerstonejs/codec-charls/package.json
+  - node_modules/@cornerstonejs/codec-charls/LICENSE
+  - node_modules/@cornerstonejs/codec-charls/dist/charlswasm_decode.*
+  - node_modules/@cornerstonejs/codec-openjpeg/package.json
+  - node_modules/@cornerstonejs/codec-openjpeg/dist/openjpegwasm_decode.*
+  - node_modules/@cornerstonejs/codec-libjpeg-turbo-8bit/package.json
+  - node_modules/@cornerstonejs/codec-libjpeg-turbo-8bit/dist/libjpegturbowasm_decode.*
 
 # App autosufficiente: resources/dcmtk/bin contiene storescu.exe (DCMTK
 # 3.7.0 win64) + le sue DLL (dcmnet, dcmdata, dcmtls, oflog, ofstd,
