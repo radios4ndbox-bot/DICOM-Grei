@@ -8,8 +8,14 @@
    Niente percorsi: il viewer conosce un esame per identificativo e un
    file per il nome neutro che gli ha dato l'archivio.
 
+   Tastiera e mouse seguono il viewer del PACS (Fujifilm Synapse 5, elenco
+   «Keyboard Shortcuts for the Viewer and Worklist» della guida in linea),
+   per le funzioni che esistono anche qui: chi referta non deve imparare
+   due serie di tasti. L'elenco è in KEY_TOOLS e nel gestore dei tasti, e
+   nel README.
+
    Mouse, sempre attivi qualunque strumento sia scelto:
-     rotella = scorri · Ctrl+rotella = zoom
+     rotella = scorri · Ctrl+rotella = un pannello / due pannelli
      tasto destro = finestra/livello · tasto centrale = sposta
      doppio clic = un pannello / due pannelli
    ══════════════════════════════════════════════════════════════════ */
@@ -27,7 +33,10 @@
     layout: 1,
     sync: false,
     active: 0,
+    hideMeasures: false,   // MAIUSC+A
+    hideText: false,       // MAIUSC+T
   };
+  const held = new Set();  // lettere tenute premute (W + trascina, MAIUSC+Z + trascina…)
   const indexes = new Map();   // id esame -> indice completo
   const measures = new Map();  // chiave immagine -> misure (valgono in entrambi i pannelli)
 
@@ -296,6 +305,15 @@
     return s && s[0] > 0 && s[1] > 0 ? s : null;
   }
 
+  /** Scala con cui l'immagine intera sta nel pannello (zoom = 1). */
+  function fitOf(p) {
+    const f = p.frame;
+    const sp = spacingOf(p);
+    const ih = f.rows * (sp ? sp[0] / sp[1] : 1);
+    const odd = p.rot % 2 === 1;
+    return Math.min(p.canvas.width / (odd ? ih : f.cols), p.canvas.height / (odd ? f.cols : ih)) * 0.98;
+  }
+
   /** Matrice immagine -> canvas, in pixel fisici. */
   function matrixOf(p) {
     const f = p.frame;
@@ -303,11 +321,7 @@
     const ch = p.canvas.height;
     const sp = spacingOf(p);
     const ay = sp ? sp[0] / sp[1] : 1; // pixel non quadrati (ricostruzioni)
-    const iw = f.cols;
-    const ih = f.rows * ay;
-    const odd = p.rot % 2 === 1;
-    const fit = Math.min(cw / (odd ? ih : iw), ch / (odd ? iw : ih)) * 0.98;
-    const s = fit * p.zoom;
+    const s = fitOf(p) * p.zoom;
     return new DOMMatrix()
       .translate(cw / 2 + p.panX, ch / 2 + p.panY)
       // la riflessione agisce sullo schermo, dopo la rotazione: «rifletti in
@@ -388,8 +402,41 @@
     ctx.drawImage(p.img, 0, 0);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    drawMeasures(p, m);
+    if (!state.hideMeasures) drawMeasures(p, m);
+    drawProbe(p);
     updateOverlay(p);
+  }
+
+  /** Valore sotto il cursore (D + clic e tieni premuto): HU in TC. */
+  function drawProbe(p) {
+    const pr = p.probe;
+    if (!pr) return;
+    const f = p.frame;
+    const x = Math.floor(pr.img.x);
+    const y = Math.floor(pr.img.y);
+    if (x < 0 || y < 0 || x >= f.cols || y >= f.rows) return;
+    let text;
+    if (f.samples === 3) {
+      const i = (y * f.cols + x) * 3;
+      text = 'RGB ' + f.pixels[i] + ' ' + f.pixels[i + 1] + ' ' + f.pixels[i + 2];
+    } else {
+      const v = f.pixels[y * f.cols + x] * f.slope + f.intercept;
+      text = fmt(v, Number.isInteger(v) ? 0 : 1) + (p.series.modality === 'CT' ? ' HU' : '');
+    }
+    const ctx = p.ctx;
+    const k = dpr();
+    ctx.font = 13 * k + 'px "Segoe UI", system-ui, sans-serif';
+    ctx.textBaseline = 'top';
+    const w = ctx.measureText(text).width;
+    ctx.strokeStyle = '#5fe0ea';
+    ctx.lineWidth = 1.5 * k;
+    ctx.beginPath();
+    ctx.arc(pr.at.x, pr.at.y, 4 * k, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,.65)';
+    ctx.fillRect(pr.at.x + 9 * k, pr.at.y - 22 * k, w + 8 * k, 19 * k);
+    ctx.fillStyle = '#5fe0ea';
+    ctx.fillText(text, pr.at.x + 13 * k, pr.at.y - 20 * k);
   }
 
   let frameReq = 0;
@@ -665,6 +712,19 @@
   // ---------------------------------------------------------------- mouse
 
   const MEASURE_TOOLS = new Set(['dist', 'angle', 'roi']);
+  let lastLayoutWheel = 0;
+  let momentaryUsed = false;
+
+  /** Trascinamenti con modificatore sul tasto sinistro, come in Synapse. */
+  function modifierMode(e) {
+    if (e.button !== 0) return null;
+    if (e.altKey && e.ctrlKey) return 'zoom';        // ALT+CTRL + trascina
+    if (e.altKey && e.shiftKey) return 'pan';        // ALT+MAIUSC + trascina
+    if (e.altKey) return 'wl';                       // ALT + trascina
+    if (e.shiftKey && held.has('z')) return 'zoom';  // MAIUSC+Z + trascina
+    if (e.shiftKey && held.has('x')) return 'pan';   // MAIUSC+X + trascina
+    return null;
+  }
 
   function attach(p) {
     const c = p.canvas;
@@ -674,9 +734,12 @@
 
     c.addEventListener('pointerdown', (e) => {
       setActive(p.i);
+      momentaryUsed = true; // la lettera tenuta premuta è stata usata: al rilascio si torna allo strumento di prima
+      // X + clic: svuota il pannello
+      if (e.button === 0 && held.has('x') && !e.shiftKey) return void clearPanel(p);
       if (!p.frame || p.frame.error) return;
       const pos = canvasPoint(p, e);
-      const mode = e.button === 2 ? 'wl' : e.button === 1 ? 'pan' : state.tool;
+      const mode = e.button === 2 ? 'wl' : e.button === 1 ? 'pan' : modifierMode(e) || state.tool;
       if (e.button === 1) e.preventDefault();
       c.setPointerCapture(e.pointerId);
 
@@ -709,6 +772,7 @@
         return;
       }
 
+      if (mode === 'probe') p.probe = { at: pos, img: toImage(p, pos.x, pos.y) };
       drag = {
         mode,
         last: pos,
@@ -718,6 +782,7 @@
         w: p.frame.samples === 1 ? { ...windowOf(p) } : null,
       };
       if (mode === 'pan') c.style.cursor = 'grabbing';
+      if (mode === 'probe') renderSoon(p); // il valore compare al clic, senza aspettare un movimento
     });
 
     c.addEventListener('pointermove', (e) => {
@@ -762,6 +827,8 @@
       } else if (drag.mode === 'pan') {
         p.panX += dx;
         p.panY += dy;
+      } else if (drag.mode === 'probe') {
+        p.probe = { at: pos, img: toImage(p, pos.x, pos.y) };
       }
       drag.last = pos;
       renderSoon(p);
@@ -782,6 +849,7 @@
         p.draft = null;
       }
       drag = null;
+      p.probe = null;
       c.style.cursor = '';
       renderSoon(p);
     };
@@ -795,11 +863,10 @@
         if (!p.frame || p.frame.error) return;
         setActive(p.i);
         if (e.ctrlKey) {
-          const pos = canvasPoint(p, e);
-          const anchor = toImage(p, pos.x, pos.y);
-          p.zoom = Math.max(0.1, Math.min(40, p.zoom * Math.exp(-e.deltaY * 0.0015)));
-          keepUnder(p, anchor, pos);
-          renderSoon(p);
+          // un cambio solo per gesto: la rotella manda molti scatti
+          const now = Date.now();
+          if (now - lastLayoutWheel > 350) setLayout(state.layout === 1 ? 2 : 1);
+          lastLayoutWheel = now;
         } else {
           setIndex(p, p.idx + (e.deltaY > 0 ? 1 : -1));
         }
@@ -928,19 +995,52 @@
     }
   });
   $('btn-layout').addEventListener('click', () => setLayout(state.layout === 1 ? 2 : 1));
-  $('btn-sync').addEventListener('click', () => {
-    state.sync = !state.sync;
-    $('btn-sync').classList.toggle('on', state.sync);
-    if (state.sync) followSync(active());
-  });
+  $('btn-sync').addEventListener('click', () => setSync(!state.sync));
   $('btn-full').addEventListener('click', () => api.fullscreen());
 
-  const KEY_TOOLS = { s: 'scroll', w: 'wl', z: 'zoom', m: 'pan', d: 'dist', a: 'angle', o: 'roi' };
+  /* Tastiera, come nel viewer di Synapse 5.
+     «Lettera + clic»: la lettera sceglie lo strumento del tasto sinistro. Se
+     la si tiene premuta mentre si usa il mouse, al rilascio torna lo strumento
+     di prima (uso al volo); se la si batte e basta, lo strumento resta. */
+  const KEY_TOOLS = {
+    r: 'dist',   // R + clic           righello
+    g: 'angle',  // G + clic           angolo a 3 punti
+    e: 'roi',    // E + clic           ROI ellittica
+    d: 'probe',  // D + clic e tieni   valore di densità
+    w: 'wl',     // W + trascina       finestra/livello
+    z: 'scroll', // Z + trascina       scorrimento rapido della serie
+  };
+  // Tastierino numerico = finestre predefinite. In Synapse dipendono da
+  // modalità e sito: qui seguono l'ordine del menu «Finestra…».
+  const NUMPAD_PRESET = ['default', '40,400', '40,350', '-600,1600', '400,1800', '40,80', '300,600', 'full'];
+
+  let momentary = null; // { key, previous }
+
+  function setSync(on) {
+    state.sync = on;
+    $('btn-sync').classList.toggle('on', on);
+    if (on) followSync(active());
+  }
+
+  function stepSeries(p, d) {
+    if (!p.series) return;
+    const list = p.exam.series;
+    const i = list.indexOf(p.series) + d;
+    if (i >= 0 && i < list.length) loadSeries(p, p.exam, list[i]);
+  }
+
+  function applyPreset(v) {
+    $('preset').value = v;
+    $('preset').dispatchEvent(new Event('change'));
+  }
 
   document.addEventListener('keydown', (e) => {
     if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.target.type !== 'range') return;
     const p = active();
     const k = e.key;
+    const low = k.length === 1 ? k.toLowerCase() : k;
+    if (low.length === 1) held.add(low);
+
     if (k === 'F11') return void api.fullscreen();
     if (k === 'Escape') {
       if (p.draft) p.draft = null;
@@ -949,12 +1049,23 @@
       return void renderSoon(p);
     }
     if (k === 'Delete' || k === 'Backspace') {
-      if (p.sel) removeMeasure(p, p.sel);
-      return void renderSoon(p);
+      // MAIUSC+CANC: via tutte le misure dell'esame; CANC: quella selezionata
+      if (e.shiftKey) {
+        for (const key of [...measures.keys()]) if (p.exam && key.startsWith(p.exam.id + '|')) measures.delete(key);
+        panels.forEach((q) => {
+          q.sel = q.draft = null;
+        });
+      } else if (p.sel) removeMeasure(p, p.sel);
+      return void panels.forEach(renderSoon);
     }
     if (k === ' ') {
       e.preventDefault();
       return void toggleCine(p);
+    }
+    // MAIUSC + frecce: serie precedente / successiva
+    if (e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+      e.preventDefault();
+      return void stepSeries(p, k === 'ArrowRight' ? 1 : -1);
     }
     const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1, PageDown: 10, PageUp: -10 }[k];
     if (step) {
@@ -963,13 +1074,70 @@
     }
     if (k === 'Home') return void setIndex(p, 0);
     if (k === 'End') return void (p.series && setIndex(p, p.series.count - 1));
+
+    // tastierino numerico: finestre predefinite (anche + e - arrivano di lì, ma hanno un altro e.code)
+    if (/^Numpad[0-9]$/.test(e.code) && !e.ctrlKey && !e.altKey) {
+      const v = NUMPAD_PRESET[Number(e.code.slice(6))];
+      if (v) applyPreset(v);
+      return;
+    }
     if (e.ctrlKey || e.altKey || e.metaKey) return;
-    const low = k.toLowerCase();
-    if (KEY_TOOLS[low]) return void setTool(KEY_TOOLS[low]);
-    if (low === 'i') return void $('btn-invert').click();
-    if (low === 'r') return void $('btn-reset').click();
-    if (low === '1') return void setLayout(1);
-    if (low === '2') return void setLayout(2);
+
+    if (k === '+') {
+      // zoom 1x: un pixel dell'immagine su un pixel dello schermo
+      if (p.frame && !p.frame.error) {
+        p.zoom = 1 / fitOf(p);
+        p.panX = p.panY = 0;
+      }
+      return void renderSoon(p);
+    }
+    if (k === '-') {
+      // adatta al pannello
+      p.zoom = 1;
+      p.panX = p.panY = 0;
+      return void renderSoon(p);
+    }
+
+    if (e.shiftKey) {
+      if (low === 'r') return void $('btn-reset').click(); // ripristina l'immagine
+      if (low === 'a') {
+        // mostra / nascondi le misure
+        state.hideMeasures = !state.hideMeasures;
+        return void panels.forEach(renderSoon);
+      }
+      if (low === 't') {
+        // mostra / nascondi i dati a schermo
+        state.hideText = !state.hideText;
+        $('views').classList.toggle('no-text', state.hideText);
+      }
+      return; // MAIUSC+Z e MAIUSC+X valgono solo insieme al trascinamento
+    }
+
+    if (KEY_TOOLS[low]) {
+      if (e.repeat) return;
+      momentary = { key: low, previous: state.tool };
+      momentaryUsed = false;
+      return void setTool(KEY_TOOLS[low]);
+    }
+    if (low === 's') return void (state.layout === 2 && setSync(!state.sync)); // scorrimento collegato sì/no
+    if (low === 'j') return void (state.layout === 2 && setSync(true));       // collega le serie con lo stesso orientamento
+    if (low === 'c') return void setSync(false);                              // scollega
+  });
+
+  document.addEventListener('keyup', (e) => {
+    const low = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    held.delete(low);
+    // strumento preso al volo tenendo premuta la lettera: si torna a quello di prima
+    if (momentary && momentary.key === low) {
+      const back = momentaryUsed && !active().draft ? momentary.previous : null;
+      momentary = null;
+      if (back) setTool(back);
+    }
+  });
+  // perdendo il fuoco i keyup non arrivano: nessun tasto deve restare "premuto"
+  window.addEventListener('blur', () => {
+    held.clear();
+    momentary = null;
   });
 
   // ---------------------------------------------------------------- elenco esami

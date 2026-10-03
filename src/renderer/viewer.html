@@ -17,48 +17,51 @@
     </div>
 
     <div class="tools" id="tools">
-      <!-- strumento del tasto sinistro. Sempre attivi: rotella = scorri,
-           tasto destro = finestra, tasto centrale = sposta, Ctrl+rotella = zoom -->
+      <!-- strumento del tasto sinistro. I tasti sono quelli del viewer di Synapse:
+           la lettera sceglie lo strumento; tenuta premuta mentre si usa il mouse,
+           al rilascio torna lo strumento di prima. Sempre attivi: rotella = scorri,
+           tasto destro = finestra, tasto centrale = sposta. -->
       <div class="tools__group" role="radiogroup" aria-label="Strumento">
-        <button data-tool="scroll" class="on" title="Scorri le immagini trascinando (S) — anche con la rotella">Scorri</button>
-        <button data-tool="wl" title="Finestra e livello: orizzontale = ampiezza, verticale = centro (W) — anche con il tasto destro">Finestra</button>
-        <button data-tool="zoom" title="Ingrandisci trascinando (Z) — anche con Ctrl + rotella">Zoom</button>
-        <button data-tool="pan" title="Sposta l'immagine (M) — anche con il tasto centrale">Sposta</button>
+        <button data-tool="scroll" class="on" title="Scorri le immagini trascinando — tasto Z, rotella, frecce su/giù, PagSu/PagGiù, Inizio/Fine">Scorri</button>
+        <button data-tool="wl" title="Finestra e livello: orizzontale = contrasto, verticale = luminosità — tasto W, ALT + trascina, tasto destro">Finestra</button>
+        <button data-tool="zoom" title="Ingrandisci trascinando — MAIUSC+Z + trascina, ALT+CTRL + trascina · tasto + = 1:1 · tasto − = adatta">Zoom</button>
+        <button data-tool="pan" title="Sposta l'immagine — MAIUSC+X + trascina, ALT+MAIUSC + trascina, tasto centrale">Sposta</button>
       </div>
       <div class="tools__group" role="radiogroup" aria-label="Misure">
-        <button data-tool="dist" title="Distanza: trascina da un punto all'altro (D)">Distanza</button>
-        <button data-tool="angle" title="Angolo: tre clic, il secondo è il vertice (A)">Angolo</button>
-        <button data-tool="roi" title="ROI ellittica: media, deviazione, minimo, massimo e area (O)">ROI</button>
-        <button id="btn-clear" title="Cancella le misure di questa immagine (Canc cancella quella selezionata)">Cancella</button>
+        <button data-tool="dist" title="Righello: trascina da un punto all'altro — tasto R">Distanza</button>
+        <button data-tool="angle" title="Angolo a tre punti: tre clic, il secondo è il vertice — tasto G">Angolo</button>
+        <button data-tool="roi" title="ROI ellittica: media, deviazione, minimo, massimo e area — tasto E">ROI</button>
+        <button data-tool="probe" title="Valore di densità sotto il cursore (HU in TC): clic e tieni premuto — tasto D">Densità</button>
+        <button id="btn-clear" title="Cancella le misure di questa immagine — CANC: quella selezionata · MAIUSC+CANC: tutte quelle dell'esame · MAIUSC+A: mostra/nascondi">Cancella</button>
       </div>
       <div class="tools__group">
-        <select id="preset" title="Finestra predefinita">
+        <select id="preset" title="Finestra predefinita — tastierino numerico 0–7">
           <option value="">Finestra…</option>
-          <option value="default">Dell'immagine</option>
-          <option value="full">Tutta la dinamica</option>
-          <option value="40,400">TC addome</option>
-          <option value="40,350">TC mediastino</option>
-          <option value="-600,1600">TC polmone</option>
-          <option value="400,1800">TC osso</option>
-          <option value="40,80">TC encefalo</option>
-          <option value="300,600">TC angio</option>
+          <option value="default">0 · Dell'immagine</option>
+          <option value="full">7 · Tutta la dinamica</option>
+          <option value="40,400">1 · TC addome</option>
+          <option value="40,350">2 · TC mediastino</option>
+          <option value="-600,1600">3 · TC polmone</option>
+          <option value="400,1800">4 · TC osso</option>
+          <option value="40,80">5 · TC encefalo</option>
+          <option value="300,600">6 · TC angio</option>
         </select>
-        <button id="btn-invert" title="Negativo (I)">Negativo</button>
+        <button id="btn-invert" title="Negativo">Negativo</button>
       </div>
       <div class="tools__group">
         <button id="btn-rot" title="Ruota di 90° a destra">Ruota</button>
         <button id="btn-fliph" title="Rifletti in orizzontale">⇋</button>
         <button id="btn-flipv" title="Rifletti in verticale">⥮</button>
-        <button id="btn-reset" title="Ripristina zoom, posizione, rotazione e finestra (R)">Ripristina</button>
+        <button id="btn-reset" title="Ripristina zoom, posizione, rotazione e finestra — MAIUSC+R">Ripristina</button>
       </div>
       <div class="tools__group">
         <button id="btn-cine" title="Riproduci in sequenza (Spazio)">▶ Cine</button>
         <input id="fps" type="number" min="1" max="60" value="12" title="Immagini al secondo" />
       </div>
       <div class="tools__group">
-        <button id="btn-layout" title="Uno o due pannelli affiancati (2)">Due pannelli</button>
-        <button id="btn-sync" title="Scorri i due pannelli insieme, alla stessa quota">Sincronizza</button>
-        <button id="btn-full" title="Schermo intero (F11)">Schermo intero</button>
+        <button id="btn-layout" title="Uno o due pannelli affiancati — CTRL + rotella, doppio clic · MAIUSC + frecce sinistra/destra: serie precedente/successiva · X + clic: svuota il pannello">Due pannelli</button>
+        <button id="btn-sync" title="Scorri i due pannelli insieme, alla stessa quota — S: sì/no · J: collega · C: scollega">Sincronizza</button>
+        <button id="btn-full" title="Schermo intero — F11 · MAIUSC+T: mostra/nascondi i dati a schermo">Schermo intero</button>
       </div>
     </div>
   </header>

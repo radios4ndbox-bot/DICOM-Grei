@@ -186,8 +186,49 @@ per cui scade.
   sincronizzato alla stessa quota;
 - lettere di orientamento (A/P, R/L, H/F) che seguono rotazioni e riflessioni.
 
-Mouse: rotella = scorri, Ctrl+rotella = zoom, tasto destro = finestra, tasto
-centrale = sposta, doppio clic = uno/due pannelli.
+**Tastiera e mouse sono quelli del viewer del PACS** (Fujifilm Synapse 5,
+elenco «Keyboard Shortcuts for the Viewer and Worklist» della sua guida in
+linea), per le funzioni che esistono anche qui: chi referta non deve imparare
+due serie di tasti. Le scorciatoie di Synapse si possono cambiare per sito e
+lingua: se in reparto sono state personalizzate, queste sono quelle di
+fabbrica.
+
+«Lettera + clic»: la lettera sceglie lo strumento del tasto sinistro. Tenuta
+premuta mentre si usa il mouse, al rilascio torna lo strumento di prima;
+battuta e basta, lo strumento resta.
+
+| Tasti | Cosa fa |
+|---|---|
+| `R` + clic | righello (distanza) |
+| `G` + clic | angolo a tre punti |
+| `E` + clic | ROI ellittica |
+| `D` + clic e tieni | valore di densità sotto il cursore (HU in TC) |
+| `W` + trascina, `ALT` + trascina | finestra/livello: su/giù luminosità, sinistra/destra contrasto |
+| `Z` + trascina | scorrimento rapido della serie |
+| `MAIUSC+Z` + trascina, `ALT+CTRL` + trascina | zoom |
+| `MAIUSC+X` + trascina, `ALT+MAIUSC` + trascina | sposta |
+| `+` / `−` | zoom 1x (un pixel dell'immagine per pixel dello schermo) / adatta al pannello |
+| `MAIUSC+R` | ripristina l'immagine |
+| frecce su/giù, `PagSu`/`PagGiù`, `Inizio`/`Fine` | immagine precedente/successiva, dieci alla volta, prima/ultima |
+| `MAIUSC` + freccia sinistra/destra | serie precedente/successiva |
+| `Spazio` | cine: avvia/ferma |
+| tastierino numerico `0`–`7` | finestre predefinite, nell'ordine del menu |
+| `MAIUSC+A` | mostra/nasconde le misure |
+| `MAIUSC+T` | mostra/nasconde i dati a schermo |
+| `MAIUSC+CANC` | toglie tutte le misure dell'esame (`CANC`: quella selezionata) |
+| `CTRL` + rotella, doppio clic | uno/due pannelli |
+| `S`, `J`, `C` | scorrimento collegato sì/no, collega, scollega |
+| `X` + clic | svuota il pannello |
+| `F11` | schermo intero |
+
+Sempre attivi col mouse, qualunque strumento sia scelto: rotella = scorri,
+tasto destro = finestra/livello, tasto centrale = sposta.
+
+Due differenze volute rispetto a Synapse: lì i preset del tastierino
+dipendono da modalità e sito, qui sono fissi; lì `F11` riporta la finestra
+alla dimensione preferita, qui è lo schermo intero. Le scorciatoie di Synapse
+per funzioni che il viewer non ha (freccia, testo, ROI a mano libera, cerchio,
+lente, linee di riferimento, MPR, protocolli di lettura) non sono assegnate.
 
 Formati decodificati (`dicomDecode.js`), ognuno confrontato pixel per pixel con
 l'originale: non compressi (anche big endian e deflated), RLE, JPEG Lossless

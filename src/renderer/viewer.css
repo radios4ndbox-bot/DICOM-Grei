@@ -157,7 +157,8 @@ body {
 .panel[data-tool="wl"] canvas { cursor: crosshair; }
 .panel[data-tool="zoom"] canvas { cursor: zoom-in; }
 .panel[data-tool="pan"] canvas { cursor: grab; }
-.panel[data-tool="dist"] canvas, .panel[data-tool="angle"] canvas, .panel[data-tool="roi"] canvas { cursor: crosshair; }
+.panel[data-tool="dist"] canvas, .panel[data-tool="angle"] canvas, .panel[data-tool="roi"] canvas,
+.panel[data-tool="probe"] canvas { cursor: crosshair; }
 
 /* dati a schermo: non devono intercettare il mouse */
 .ov, .mk, .panel__msg { position: absolute; pointer-events: none; text-shadow: 0 0 3px #000, 0 0 3px #000; }
@@ -173,6 +174,9 @@ body {
 .mk--r { right: 10px; top: 50%; transform: translateY(-50%); }
 .panel__msg { inset: 0; display: flex; align-items: center; justify-content: center; padding: 30px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .panel__msg.err { color: var(--warn); }
+
+/* MAIUSC+T: via i dati a schermo, resta solo l'immagine */
+.views.no-text .ov, .views.no-text .mk { display: none; }
 
 .panel__slider { position: absolute; left: 8px; right: 8px; bottom: 3px; width: auto; height: 14px; margin: 0; accent-color: var(--teal); opacity: .55; }
 .panel__slider:hover { opacity: 1; }
