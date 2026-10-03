@@ -135,6 +135,67 @@ esito. **Non contiene dati del paziente** — né nome, né ID, né data di nasc
 né etichetta del volume — perché le postazioni sono condivise e il Desktop è la
 cartella più esposta.
 
+## Archivio locale e viewer
+
+Quando l'importazione non va a buon fine il supporto può non essere più a
+portata di mano. L'esame resta allora consultabile sulla postazione, in un
+viewer interno, per **20 giorni** (`ARCHIVE_DAYS`).
+
+**Cosa entra in archivio**, e solo questo:
+
+- in automatico, l'esame il cui invio al PACS è fallito del tutto o in parte
+  (file rifiutati, PACS muto, `storescu` che non parte). Si conserva lo studio
+  intero, non i soli file falliti: uno studio a metà non si legge;
+- a mano, con **«Conserva in archivio»** a fine importazione: per l'esame
+  inviato senza errori ma che il medico ha verificato come non indicizzato dal
+  PACS. Il pulsante c'è finché lo staging non viene pulito.
+
+Un'importazione riuscita non lascia niente. Lo stesso studio archiviato due
+volte resta una volta sola, con la scadenza che riparte.
+
+**Dove sta**: `C:\DICOM Grei\Archivio`, una cartella per esame.
+
+| | |
+|---|---|
+| `<id>\files\000001.dcm…` | i file DICOM, con nomi neutri |
+| `<id>\meta.json` | paziente, studio, date, motivo: ciò che mostra l'elenco |
+| `<id>\index.json` | lo stesso più serie e ordine delle immagini |
+
+È in `C:\` e non in `%ProgramData%` perché l'archivio è di **tutti i medici
+della postazione**, che devono poterlo anche eliminare: sotto `C:\` una cartella
+creata da un utente eredita «Authenticated Users: modifica» (verificato con
+`icacls`, come `C:\tmp`), sotto `%ProgramData%` i file li cambia solo chi li ha
+creati. I file entrano come collegamenti fisici allo staging: nessun byte
+copiato (63 file in 0,1 s), e lo staging si può svuotare senza toccarli.
+
+**Quando esce**: allo scadere dei 20 giorni, da solo (controllo all'avvio e ogni
+10 minuti), oppure prima con la ✕ sull'esame, che chiede conferma. È l'unico
+punto in cui l'app tiene dati del paziente oltre la giornata, ed è il motivo
+per cui scade.
+
+**Il viewer** («Archivio» in alto a destra) è una finestra a parte:
+
+- elenco degli esami con motivo e giorni rimasti, serie con miniatura;
+- scorrimento (rotella, trascinamento, tasti, cursore), finestra/livello con i
+  preset TC, negativo, zoom, spostamento, rotazione e riflessione, cine;
+- **misure**: distanza, angolo, ROI ellittica con media, deviazione standard,
+  minimo, massimo e area. In mm da `PixelSpacing`; se c'è solo la spaziatura
+  sul rivelatore (RX) la misura è segnata con `*` e l'immagine lo dice; senza
+  spaziatura, in pixel. In TC i valori sono in HU;
+- **due pannelli** per il confronto, anche fra esami diversi, con scorrimento
+  sincronizzato alla stessa quota;
+- lettere di orientamento (A/P, R/L, H/F) che seguono rotazioni e riflessioni.
+
+Mouse: rotella = scorri, Ctrl+rotella = zoom, tasto destro = finestra, tasto
+centrale = sposta, doppio clic = uno/due pannelli.
+
+Formati decodificati (`dicomDecode.js`), ognuno confrontato pixel per pixel con
+l'originale: non compressi (anche big endian e deflated), RLE, JPEG Lossless
+(`jpeg-lossless-decoder-js`), JPEG-LS (CharLS), JPEG 2000 (OpenJPEG), JPEG
+baseline 8 bit (libjpeg-turbo). Non ancora: JPEG esteso a 12 bit, immagini a
+tavolozza, oggetti multi-fotogramma «enhanced» con geometria per fotogramma.
+Non è una stazione di refertazione: niente MPR, 3D o fusione.
+
 ## CD/DVD danneggiati
 
 `fs.copyFile` gira su un thread del pool di libuv e una lettura ferma su un
@@ -359,3 +420,13 @@ I file arrivano da un supporto del paziente, quindi sono dati non fidati.
   (quale unità fra quelle rilevate, quale tipo forzato).
 - La finestra è `sandbox: true` + `contextIsolation: true`, con CSP
   `default-src 'none'`, navigazione e nuove finestre negate.
+- Il viewer segue le stesse regole: finestra sandboxed con la stessa CSP, e
+  nessun percorso attraversa il ponte. Chiede «esame X, file `000012.dcm`,
+  fotogramma 0»: l'identificativo e il nome devono avere esattamente la forma
+  che dà loro l'archivio (`archive.filePath`), altrimenti la richiesta è
+  rifiutata. I codec girano in un worker thread, su pixel limitati a 64 Mpx, con
+  dimensioni e offset controllati contro il buffer letto.
+- L'archivio locale contiene dati del paziente (nome, ID, immagini) leggibili
+  da ogni utente Windows della postazione, per scelta: è un archivio di
+  reparto. Per questo ci entrano solo gli esami non arrivati al PACS e scadono
+  in 20 giorni. Il log delle importazioni continua a non contenerne.

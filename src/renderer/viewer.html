@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; form-action 'none'; base-uri 'none'" />
+  <title>DICOM Grei — Archivio</title>
+  <link rel="icon" type="image/svg+xml" href="assets/globe.svg" />
+  <link rel="stylesheet" href="viewer.css" />
+</head>
+<body>
+  <header class="vbar">
+    <div class="vbar__brand">
+      <img src="assets/globe.svg" alt="" width="20" height="20" />
+      <span>DICOM Grei</span>
+      <span class="vbar__sub">Archivio</span>
+    </div>
+
+    <div class="tools" id="tools">
+      <!-- strumento del tasto sinistro. Sempre attivi: rotella = scorri,
+           tasto destro = finestra, tasto centrale = sposta, Ctrl+rotella = zoom -->
+      <div class="tools__group" role="radiogroup" aria-label="Strumento">
+        <button data-tool="scroll" class="on" title="Scorri le immagini trascinando (S) — anche con la rotella">Scorri</button>
+        <button data-tool="wl" title="Finestra e livello: orizzontale = ampiezza, verticale = centro (W) — anche con il tasto destro">Finestra</button>
+        <button data-tool="zoom" title="Ingrandisci trascinando (Z) — anche con Ctrl + rotella">Zoom</button>
+        <button data-tool="pan" title="Sposta l'immagine (M) — anche con il tasto centrale">Sposta</button>
+      </div>
+      <div class="tools__group" role="radiogroup" aria-label="Misure">
+        <button data-tool="dist" title="Distanza: trascina da un punto all'altro (D)">Distanza</button>
+        <button data-tool="angle" title="Angolo: tre clic, il secondo è il vertice (A)">Angolo</button>
+        <button data-tool="roi" title="ROI ellittica: media, deviazione, minimo, massimo e area (O)">ROI</button>
+        <button id="btn-clear" title="Cancella le misure di questa immagine (Canc cancella quella selezionata)">Cancella</button>
+      </div>
+      <div class="tools__group">
+        <select id="preset" title="Finestra predefinita">
+          <option value="">Finestra…</option>
+          <option value="default">Dell'immagine</option>
+          <option value="full">Tutta la dinamica</option>
+          <option value="40,400">TC addome</option>
+          <option value="40,350">TC mediastino</option>
+          <option value="-600,1600">TC polmone</option>
+          <option value="400,1800">TC osso</option>
+          <option value="40,80">TC encefalo</option>
+          <option value="300,600">TC angio</option>
+        </select>
+        <button id="btn-invert" title="Negativo (I)">Negativo</button>
+      </div>
+      <div class="tools__group">
+        <button id="btn-rot" title="Ruota di 90° a destra">Ruota</button>
+        <button id="btn-fliph" title="Rifletti in orizzontale">⇋</button>
+        <button id="btn-flipv" title="Rifletti in verticale">⥮</button>
+        <button id="btn-reset" title="Ripristina zoom, posizione, rotazione e finestra (R)">Ripristina</button>
+      </div>
+      <div class="tools__group">
+        <button id="btn-cine" title="Riproduci in sequenza (Spazio)">▶ Cine</button>
+        <input id="fps" type="number" min="1" max="60" value="12" title="Immagini al secondo" />
+      </div>
+      <div class="tools__group">
+        <button id="btn-layout" title="Uno o due pannelli affiancati (2)">Due pannelli</button>
+        <button id="btn-sync" title="Scorri i due pannelli insieme, alla stessa quota">Sincronizza</button>
+        <button id="btn-full" title="Schermo intero (F11)">Schermo intero</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="vmain">
+    <aside class="side">
+      <div class="side__head">Esami in archivio <span id="exam-count"></span></div>
+      <ul id="exams" class="exams"></ul>
+      <p id="exams-empty" class="side__empty" hidden>
+        Nessun esame in archivio. Ci finiscono gli esami il cui invio al PACS non è riuscito,
+        e quelli conservati con «Conserva in archivio» a fine importazione.
+      </p>
+      <div class="side__head">Serie</div>
+      <div id="series" class="series"></div>
+    </aside>
+
+    <section class="views" id="views" data-layout="1">
+      <div class="panel active" data-i="0">
+        <canvas></canvas>
+        <div class="ov ov--tl"></div><div class="ov ov--tr"></div>
+        <div class="ov ov--bl"></div><div class="ov ov--br"></div>
+        <div class="mk mk--t"></div><div class="mk mk--b"></div>
+        <div class="mk mk--l"></div><div class="mk mk--r"></div>
+        <div class="panel__msg"></div>
+        <input class="panel__slider" type="range" min="0" max="0" value="0" aria-label="Immagine" />
+      </div>
+      <div class="panel" data-i="1">
+        <canvas></canvas>
+        <div class="ov ov--tl"></div><div class="ov ov--tr"></div>
+        <div class="ov ov--bl"></div><div class="ov ov--br"></div>
+        <div class="mk mk--t"></div><div class="mk mk--b"></div>
+        <div class="mk mk--l"></div><div class="mk mk--r"></div>
+        <div class="panel__msg"></div>
+        <input class="panel__slider" type="range" min="0" max="0" value="0" aria-label="Immagine" />
+      </div>
+    </section>
+  </div>
+
+  <script src="viewer.js"></script>
+</body>
+</html>
