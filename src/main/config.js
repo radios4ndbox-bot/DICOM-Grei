@@ -140,6 +140,20 @@ module.exports = {
   // fuori dallo staging, altrimenti verrebbe cancellato a ogni import
   DAILY_STAMP: 'C:\\tmp\\dicom_grei.day',
 
+  // ---- Archivio locale e viewer -----------------------------------------
+  // Gli esami il cui invio non è andato a buon fine (o che il medico ha
+  // verificato come non indicizzati dal PACS) restano consultabili qui.
+  //
+  // Sta in C:\ e non in %ProgramData% apposta: l'archivio è di TUTTI i medici
+  // della postazione, che devono poterlo anche eliminare. Sotto C:\ le cartelle
+  // create da un utente ereditano "Authenticated Users: modifica"; sotto
+  // %ProgramData% i file li può cambiare solo chi li ha creati. È lo stesso
+  // motivo per cui lo staging condiviso sta in C:\tmp. E non sta in C:\tmp
+  // perché quella è una cartella che chiunque si sente libero di svuotare.
+  ARCHIVE_DIR: 'C:\\DICOM Grei\\Archivio',
+  // Giorni di conservazione: poi l'esame viene eliminato da solo.
+  ARCHIVE_DAYS: 20,
+
   // Le stesse tre cartelle col nome di prima di DICOM Grei. Sulle postazioni
   // aggiornate restano lì, anche da 1 GB e più: dailyPurge le toglie, ma solo
   // se la versione vecchia non ha girato oggi (vedi purgeLegacy in cleanup.js).

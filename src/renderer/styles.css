@@ -188,7 +188,29 @@ main { padding: 0; min-width: 0; }
   font-size: 11px;
 }
 .viewer__zoom-bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.viewer__zoom-bar .icon-btn { width: 26px; height: 26px; font-size: 13px; }
+.viewer__zoom-bar /* ---- archivio locale -------------------------------------------------- */
+.archive-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; font-size: 13px; }
+.archive-btn__n {
+  min-width: 18px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--teal);
+  color: #fff;
+  font: 600 11px/1.2 "Segoe UI", system-ui, sans-serif;
+  text-align: center;
+}
+.archive-status {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #bfe6ec;
+  border-radius: 10px;
+  background: #f2fbfc;
+  font-size: 13px;
+}
+.archive-status--err { border-color: #f0c4be; background: #fdf3f2; color: var(--err); }
+.archive-status button { margin-left: 10px; padding: 4px 10px; font-size: 12px; }
+
+.icon-btn { width: 26px; height: 26px; font-size: 13px; }
 .viewer__zoom-stage {
   flex: 1;
   min-height: 0;

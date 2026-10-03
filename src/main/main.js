@@ -28,6 +28,8 @@ const { stageFiles } = require('./copyStage');
 const { sendStoreScu, lastSentCommand, preflightSend } = require('./sendStoreScu');
 const { cleanup, dailyPurge } = require('./cleanup');
 const { startPreview } = require('./preview');
+const archive = require('./archive');
+const viewerHost = require('./viewerHost');
 const { openImportLog, formatBytes, formatDuration, mbps } = require('./importLog');
 
 const config = require('./config');
@@ -51,6 +53,9 @@ const session = {
   plan: null,
   files: null, // elenco dei file del supporto, dalla scansione: non si ripercorre l'albero
   send: null,
+  // cartelle dello staging dell'ultima copia COMPLETA: quello che «Conserva in
+  // archivio» può ancora salvare. Si azzera a ogni pulizia e a ogni nuova copia.
+  staged: null,
   preview: null,
   busy: false,
   preparing: false,
@@ -247,6 +252,7 @@ function startPreviewChannel() {
 ipcMain.handle('run-import', async (_e, opts) => {
   if (!session.plan) throw new Error('Nessuna classificazione disponibile.');
   if (session.busy) throw new Error('Importazione già in corso.');
+  session.staged = null; // la copia che parte sostituisce lo staging precedente
 
   // Dal renderer prendiamo SOLO l'eventuale tipo forzato dalla tendina.
   // dataRoot/subfolders restano quelli calcolati qui: il renderer non può
@@ -349,6 +355,12 @@ ipcMain.handle('run-import', async (_e, opts) => {
     if (result.send && result.send.failureStatuses) {
       for (const [st, n] of Object.entries(result.send.failureStatuses)) log.line(`  non inviati · ${st}: ${n}`);
     }
+    // né nome né ID del paziente: solo che l'esame è stato conservato
+    if (result.archived && result.archived.id) {
+      log.line(`Archivio locale: esame conservato per ${config.ARCHIVE_DAYS} giorni (${result.archived.imageCount} immagini)`);
+    } else if (result.archived && result.archived.error) {
+      log.line('Archivio locale: NON conservato — ' + result.archived.error);
+    }
     return { ...result, timing, logPath: log.path };
   };
 
@@ -400,6 +412,8 @@ ipcMain.handle('run-import', async (_e, opts) => {
       return finish({ copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' });
     }
 
+    session.staged = { partDirs: copy.partDirs };
+
     log.section('INVIO A PACS');
     const pending = sendStoreScu(
       { pattern: plan.pattern, partDirs: copy.partDirs, totalFiles: copy.copied },
@@ -426,13 +440,23 @@ ipcMain.handle('run-import', async (_e, opts) => {
     // niente (30/09/2026). Lo toglie «Pulisci», la prossima importazione o la
     // pulizia giornaliera. L'ISO resta montata, come prima.
     if (send.cancelled) {
-      return finish({ copy, send, iso, interrupted: true, stagingKept: true });
+      return finish({ copy, send, iso, interrupted: true, stagingKept: true, archivable: true });
     }
 
-    return finish({ copy, send, iso, workers, turbo, mode });
+    // Invio non riuscito, del tutto o in parte: l'esame non è (tutto) nel PACS
+    // e il supporto può non essere più a portata di mano. Resta consultabile
+    // nell'archivio locale. Si conserva l'esame intero, non solo i file
+    // falliti: uno studio a metà non si legge.
+    const sendFailed = send.failed > 0 || send.success === 0;
+    const archived = sendFailed ? await archiveStaged('invio-fallito', emitLog) : null;
+
+    return finish({ copy, send, iso, workers, turbo, mode, archived, archivable: true });
   } catch (err) {
     log.line('ERRORE: ' + String((err && err.message) || err));
-    finish({ error: String((err && err.message) || err) });
+    // errore dopo una copia completa (storescu che non parte, rete giù): anche
+    // questo è un invio non riuscito
+    const archived = session.staged ? await archiveStaged('invio-fallito', emitLog) : null;
+    finish({ error: String((err && err.message) || err), archived });
     throw err;
   } finally {
     ch.flush();
@@ -442,6 +466,51 @@ ipcMain.handle('run-import', async (_e, opts) => {
     session.send = null;
     session.cancelRequested = false;
     await log.close();
+  }
+});
+
+/**
+ * Conserva nell'archivio locale l'esame che sta nello staging.
+ * Non fa mai fallire l'importazione: se l'archivio non è scrivibile lo dice.
+ */
+async function archiveStaged(reason, emitLog) {
+  if (!session.staged) return null;
+  const say = emitLog || (() => {});
+  try {
+    const meta = await archive.archiveStaging({ partDirs: session.staged.partDirs, reason });
+    say(
+      `> esame conservato nell'archivio locale per ${config.ARCHIVE_DAYS} giorni: ` +
+        `${meta.imageCount} immagini in ${meta.seriesCount} serie, consultabile da «Archivio»`
+    );
+    return { id: meta.id, imageCount: meta.imageCount, seriesCount: meta.seriesCount, daysLeft: meta.daysLeft, reason };
+  } catch (err) {
+    const message = String((err && err.message) || err);
+    say('> archivio locale: esame NON conservato — ' + message);
+    return { error: message };
+  }
+}
+
+// «Conserva in archivio»: l'invio è riuscito ma il medico ha verificato che
+// l'esame non è indicizzato nel PACS. Il renderer non indica cosa archiviare:
+// è lo staging dell'ultima importazione, che il main conosce.
+ipcMain.handle('archive-current', async () => {
+  if (session.busy) throw new Error('Importazione in corso.');
+  if (!session.staged) throw new Error('Nessun esame in staging: è già stato pulito o non è mai stato copiato.');
+  const r = await archiveStaged('non-indicizzato');
+  if (!r || r.error) throw new Error((r && r.error) || 'Archiviazione non riuscita.');
+  return r;
+});
+
+ipcMain.handle('archive-count', () => archive.list().length);
+
+viewerHost.register();
+
+// L'elenco è cambiato (esame aggiunto, eliminato, scaduto): lo sanno tutte le
+// finestre, il conteggio nell'intestazione e l'elenco del viewer.
+archive.onChange(() => {
+  const count = archive.list().length;
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send('archive-changed', { count });
   }
 });
 
@@ -507,6 +576,7 @@ ipcMain.handle('cleanup', async () => {
   const iso = (session.prepared && session.prepared.iso) || null;
   toWindow('progress', { phase: 'cleanup', state: 'start' });
   const result = await cleanup({ iso });
+  session.staged = null; // lo staging non c'è più: niente da conservare
   // la sorgente estratta/montata non esiste più: ripartire da qui significa
   // rilevare di nuovo il supporto
   resetSource();
@@ -553,6 +623,12 @@ app.whenReady().then(() => {
     if (session.busy || session.purging) return;
     session.purging = true;
     dailyPurge(false)
+      .then((r) => {
+        if (r && r.purged) session.staged = null;
+      })
+      .catch(() => {})
+      // gli esami in archivio da più di ARCHIVE_DAYS giorni se ne vanno da soli
+      .then(() => archive.purge())
       .catch(() => {})
       .finally(() => {
         session.purging = false;

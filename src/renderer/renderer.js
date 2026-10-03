@@ -617,6 +617,7 @@ async function startImport() {
   $('btn-restart').classList.add('hidden');
   $('cleanup-status').textContent = '';
   $('btn-copy-cmd').classList.add('hidden');
+  resetArchiveStatus();
   $('send-ok').textContent = 'Success: 0';
   $('send-err').textContent = 'Error: 0';
   $('copy-skipped').textContent = '';
@@ -832,6 +833,13 @@ function onImportDone(result) {
   // rilanciare da cmd sugli stessi file, per confrontare come si deve
   if (result.send) $('btn-copy-cmd').classList.remove('hidden');
 
+  // Archivio locale. Se l'invio è fallito l'esame è già stato conservato dal
+  // main; se è riuscito, il medico può conservarlo lui quando verifica che nel
+  // PACS non compare.
+  if (result.archived && result.archived.id) showArchived(result.archived, true);
+  else if (result.archived && result.archived.error) showArchiveError(result.archived.error);
+  else if (result.archivable) $('btn-archive').classList.remove('hidden');
+
   if (result.interrupted && !result.stagingKept) {
     $('cleanup-status').textContent = 'Staging azzerato automaticamente dopo l’interruzione.';
   }
@@ -843,6 +851,7 @@ $('btn-cleanup').addEventListener('click', async () => {
   $('btn-cleanup').disabled = true;
   try {
     const r = await window.api.cleanup();
+    $('btn-archive').classList.add('hidden');
     showModal(
       'Pulizia completata',
       'Cartella di staging svuotata' +
@@ -854,6 +863,57 @@ $('btn-cleanup').addEventListener('click', async () => {
     $('btn-cleanup').disabled = false;
   }
 });
+
+// ---------------------------------------------------------------- archivio
+
+function showArchived(a, automatic) {
+  const box = $('archive-status');
+  box.className = 'archive-status';
+  box.textContent =
+    (automatic ? "Invio non riuscito: l'esame è stato conservato" : 'Esame conservato') +
+    ` nell'archivio della postazione per ${a.daysLeft} giorni (${a.imageCount} immagini, ${a.seriesCount} serie).`;
+  const open = document.createElement('button');
+  open.className = 'ghost';
+  open.textContent = 'Apri nel viewer';
+  open.addEventListener('click', () => window.api.openViewer(a.id));
+  box.appendChild(open);
+  $('btn-archive').classList.add('hidden');
+}
+
+function showArchiveError(message) {
+  const box = $('archive-status');
+  box.className = 'archive-status archive-status--err';
+  // Electron antepone "Error invoking remote method '…': Error:" ai messaggi del main
+  const clean = String(message).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');
+  box.textContent = 'Esame NON conservato in archivio: ' + clean;
+}
+
+function resetArchiveStatus() {
+  $('archive-status').className = 'archive-status hidden';
+  $('archive-status').textContent = '';
+  $('btn-archive').classList.add('hidden');
+  $('btn-archive').disabled = false;
+}
+
+$('btn-archive').addEventListener('click', async () => {
+  $('btn-archive').disabled = true;
+  try {
+    showArchived(await window.api.archiveCurrent(), false);
+  } catch (err) {
+    showArchiveError(err.message);
+    $('btn-archive').disabled = false;
+  }
+});
+
+$('btn-archive-open').addEventListener('click', () => window.api.openViewer());
+
+function setArchiveCount(n) {
+  const b = $('archive-count');
+  b.textContent = String(n);
+  b.hidden = !(n > 0);
+}
+window.api.archiveCount().then(setArchiveCount).catch(() => {});
+window.api.onArchiveChanged((d) => setArchiveCount(d && d.count));
 
 $('btn-copy-cmd').addEventListener('click', async () => {
   try {
@@ -877,6 +937,7 @@ $('btn-restart').addEventListener('click', () => {
   $('btn-cleanup').disabled = false;
   $('btn-cleanup').classList.add('hidden');
   $('btn-copy-cmd').classList.add('hidden');
+  resetArchiveStatus();
   $('btn-stop').classList.add('hidden');
   $('btn-to-study').disabled = true;
   showStep('media');

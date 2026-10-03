@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('api', {
   stopImport: () => ipcRenderer.invoke('stop-import'),
   cleanup: () => ipcRenderer.invoke('cleanup'),
 
+  // Archivio locale: «conserva» salva lo staging dell'ultima importazione (il
+  // main sa qual è), «apri» mostra il viewer, eventualmente su un esame.
+  archiveCurrent: () => ipcRenderer.invoke('archive-current'),
+  archiveCount: () => ipcRenderer.invoke('archive-count'),
+  openViewer: (id) => ipcRenderer.invoke('viewer-open', id || null),
+  onArchiveChanged: (cb) => subscribe('archive-changed', cb),
+
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (values) => ipcRenderer.invoke('save-settings', values),
   resetSettings: () => ipcRenderer.invoke('reset-settings'),

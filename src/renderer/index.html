@@ -125,6 +125,10 @@
       </svg>
     </h1>
     <span class="pacs-badge da-cascata" id="pacs-badge">PACS @ 127.0.0.1:104</span>
+    <!-- Archivio locale: gli esami non arrivati al PACS, consultabili per 20 giorni -->
+    <button id="btn-archive-open" class="archive-btn da-cascata" title="Esami conservati sulla postazione e viewer">
+      Archivio <span class="archive-btn__n" id="archive-count" hidden>0</span>
+    </button>
     <button id="btn-settings" class="icon-btn da-cascata" title="Impostazioni" aria-label="Impostazioni">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
         <path d="M12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" />
@@ -265,9 +269,11 @@
 
       <div class="row between" id="finish-actions">
         <button id="btn-cleanup" class="danger hidden">Pulisci C:\tmp\dicom_grei</button>
+        <button id="btn-archive" class="ghost hidden" title="Conserva questo esame sulla postazione per 20 giorni: da usare quando l'invio è riuscito ma l'esame non compare nel PACS">Conserva in archivio</button>
         <button id="btn-copy-cmd" class="ghost hidden" title="Copia la riga di comando di storescu, pronta da incollare in cmd">Copia comando</button>
         <button id="btn-restart" class="ghost hidden">Nuova importazione</button>
       </div>
+      <p id="archive-status" class="archive-status hidden"></p>
       <p id="cleanup-status" class="muted"></p>
     </section>
    </main>
