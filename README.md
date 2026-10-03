@@ -184,7 +184,14 @@ per cui scade.
   spaziatura, in pixel. In TC i valori sono in HU;
 - **due pannelli** per il confronto, anche fra esami diversi, con scorrimento
   sincronizzato alla stessa quota;
-- lettere di orientamento (A/P, R/L, H/F) che seguono rotazioni e riflessioni.
+- lettere di orientamento (A/P, R/L, H/F) che seguono rotazioni e riflessioni;
+- **«Compara»**: apre l'immagine che si sta guardando in una seconda finestra,
+  come quelle del viewer del PACS, da affiancargli sullo schermo accanto. Con
+  più schermi va su uno diverso da quello di partenza (il più vicino, e libero
+  da altre finestre di confronto) a tutto schermo; con uno solo occupa la metà
+  destra. È un viewer completo senza l'elenco a lato, che «Elenco» riapre; le
+  finestre sono indipendenti, se ne possono aprire quante servono, e restano
+  aperte anche chiudendo la finestra dell'archivio.
 
 **Tastiera e mouse sono quelli del viewer del PACS** (Fujifilm Synapse 5,
 elenco «Keyboard Shortcuts for the Viewer and Worklist» della sua guida in

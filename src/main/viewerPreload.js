@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('archive', {
   frame: (id, f, fr) => ipcRenderer.invoke('archive-frame', { id, f, fr }),
   remove: (id) => ipcRenderer.invoke('archive-delete', id),
   fullscreen: () => ipcRenderer.invoke('viewer-fullscreen'),
+  // seconda finestra sulla stessa immagine: { id, key (serie), idx (immagine) }
+  compare: (target) => ipcRenderer.invoke('viewer-compare', target || {}),
   onChanged: (cb) => subscribe('archive-changed', cb),
   onOpenExam: (cb) => subscribe('viewer-open-exam', cb),
 });

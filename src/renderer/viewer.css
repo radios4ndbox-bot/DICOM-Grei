@@ -62,6 +62,18 @@ body {
 .tools select { padding: 0 6px; }
 .tools select option { background: #1a242b; }
 
+/* «Compara» è l'azione che porta fuori dalla finestra: si distingue dagli strumenti */
+#btn-compare { border-color: var(--teal); color: var(--teal-l); font-weight: 600; }
+#btn-compare:hover { background: #14343c; }
+body:not(.compare) #btn-compare { border-radius: 6px; } /* «Elenco» è nascosto: resta solo */
+
+/* Finestra di confronto: l'elenco a lato è chiuso finché non lo si chiede, e
+   il pulsante che lo riapre esiste solo lì. */
+#btn-side { display: none; }
+body.compare #btn-side { display: inline-block; }
+body.compare .side { display: none; }
+body.compare.show-side .side { display: flex; }
+
 /* ---- corpo ------------------------------------------------------------ */
 .vmain { flex: 1; display: flex; min-height: 0; }
 

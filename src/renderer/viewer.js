@@ -998,6 +998,17 @@
   $('btn-sync').addEventListener('click', () => setSync(!state.sync));
   $('btn-full').addEventListener('click', () => api.fullscreen());
 
+  // «Compara»: la stessa immagine in una seconda finestra, da mettere sullo
+  // schermo accanto (di fianco al viewer del PACS, o a questo).
+  $('btn-compare').addEventListener('click', () => {
+    const p = active();
+    api.compare(p.series ? { id: p.exam.id, key: p.series.key, idx: p.idx } : {});
+  });
+  // nella finestra di confronto l'elenco a lato è chiuso: questo lo riapre
+  $('btn-side').addEventListener('click', () => {
+    $('btn-side').classList.toggle('on', document.body.classList.toggle('show-side'));
+  });
+
   /* Tastiera, come nel viewer di Synapse 5.
      «Lettera + clic»: la lettera sceglie lo strumento del tasto sinistro. Se
      la si tiene premuta mentre si usa il mouse, al rilascio torna lo strumento
@@ -1233,15 +1244,20 @@
       $('series').textContent = '';
     }
     renderExams();
-    if (!state.examId && state.exams.length) selectExam(state.exams[0].id);
-    else panels.forEach(render);
+    if (!state.examId && state.exams.length) {
+      // all'apertura: l'esame chiesto dal main, se c'è ancora, altrimenti il più recente
+      const t = wanted && ids.has(wanted.id) ? wanted : null;
+      selectExam(t ? t.id : state.exams[0].id, t);
+    } else panels.forEach(render);
   }
 
   // ---------------------------------------------------------------- serie
 
   let thumbGen = 0;
+  let wanted = null; // { id, key?, idx? } chiesto dal main all'apertura
 
-  async function selectExam(id) {
+  /** @param {{key?:string, idx?:number}} [target] serie e immagine da mostrare subito */
+  async function selectExam(id, target) {
     if (!state.exams.some((m) => m.id === id)) return;
     state.examId = id;
     renderExams();
@@ -1259,7 +1275,10 @@
     renderSeries(idx);
     // il pannello attivo, se vuoto o su un altro esame, mostra la serie più lunga
     const p = active();
-    if (!p.series || p.exam.id !== id) {
+    const asked = target && target.key ? idx.series.find((s) => s.key === target.key) : null;
+    if (asked) {
+      loadSeries(p, idx, asked, target.idx || 0);
+    } else if (!p.series || p.exam.id !== id) {
       const best = idx.series.slice().sort((a, b) => b.count - a.count)[0];
       if (best) loadSeries(p, idx, best);
     }
@@ -1333,18 +1352,25 @@
 
   // ---------------------------------------------------------------- avvio
 
+  // Finestra di confronto (aperta con «Compara»): stessa pagina, senza elenco a
+  // lato, così l'immagine prende tutto lo schermo su cui la si mette.
+  if (location.hash === '#compare') {
+    document.body.classList.add('compare');
+    document.title = 'DICOM Grei — Confronto';
+    document.querySelector('.vbar__sub').textContent = 'Confronto';
+  }
+
   panels.forEach(attach);
   new ResizeObserver(() => panels.forEach(renderSoon)).observe($('views'));
   setTool('scroll');
   setLayout(1);
 
-  let wanted = null;
-  api.onOpenExam((id) => {
-    wanted = id;
-    if (state.exams.some((m) => m.id === id)) selectExam(id);
+  // Il main dice su cosa aprirsi: un esame (dalla finestra principale) oppure
+  // esame + serie + immagine (una finestra di confronto).
+  api.onOpenExam((t) => {
+    wanted = typeof t === 'string' ? { id: t } : t;
+    if (wanted && state.exams.some((m) => m.id === wanted.id)) selectExam(wanted.id, wanted);
   });
   api.onChanged(() => refreshExams());
-  refreshExams().then(() => {
-    if (wanted && wanted !== state.examId) selectExam(wanted);
-  });
+  refreshExams();
 })();
