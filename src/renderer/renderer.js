@@ -556,8 +556,8 @@ function renderStudy() {
   $('st-desc').textContent = dash(s && s.studyDescription);
   $('st-date').textContent = dash(s && s.studyDate);
   $('study-src').textContent = s
-    ? `Letto da: ${s.sampleFile}${s.patientId ? ' · ID ' + s.patientId : ''}${s.accession ? ' · Accession ' + s.accession : ''}`
-    : 'Dati anagrafici non leggibili dai file di questo supporto.';
+    ? [s.patientId && 'ID ' + s.patientId, s.accession && 'Accession ' + s.accession].filter(Boolean).join(' · ')
+    : 'Dati anagrafici non leggibili.';
 
   $('clf-type').textContent = p.type;
   $('clf-pattern').textContent = p.pattern;
@@ -566,12 +566,15 @@ function renderStudy() {
     p.totalBytes == null ? '—' : (p.bytesEstimated ? 'circa ' : '') + formatMB(p.totalBytes);
   // solo l'invio: è la fase stabile. La copia dipende dal supporto (nel report
   // sul campo da 1,5 a 9 MB/s) e una stima a priori sarebbe solo un numero.
-  $('clf-eta').textContent = p.sendEtaSec ? `circa ${formatEta(p.sendEtaSec)} (una associazione)` : '—';
+  $('clf-eta').textContent = p.sendEtaSec ? `circa ${formatEta(p.sendEtaSec)}` : '—';
   // i file non-immagine (visualizzatore, DICOMDIR, autorun) non vengono copiati:
   // dirlo evita la domanda "perche' il conteggio non torna col contenuto del CD"
   $('clf-junk-row').classList.toggle('hidden', !p.skippedJunk);
   $('clf-junk').textContent = p.skippedJunk || 0;
-  $('clf-reasoning').textContent = p.reasoning;
+  // Il perché della classificazione va nel log dell'importazione: qui basta il
+  // tipo. Resta a schermo solo quando non c'è niente da copiare, perché lì è
+  // l'indicazione su cosa fare.
+  $('clf-reasoning').textContent = p.totalFiles ? '' : p.reasoning;
   const tree = $('clf-tree');
   tree.textContent = '';
   for (const t of p.tree) {
@@ -586,15 +589,9 @@ function renderStudy() {
 // lancio a mano da cmd, ed è la prima cosa da provare se il PACS rifiuta le
 // associazioni in più.
 const SEND_MODE_NOTE = {
-  normal:
-    'Poche associazioni DICOM insieme: più veloce se il PACS le accetta tutte. ' +
-    'Se compare «Association Request Failed» tornare a Sequenziale.',
-  turbo:
-    'Molte associazioni in parallelo: molto più veloce sui supporti grandi, carica di più PC e PACS. ' +
-    'Se compare «Association Request Failed» il PACS ne accetta meno: scendere di modalità.',
-  single:
-    'Una sola associazione, staging non spezzato: lo stesso comando che da cmd non perde ' +
-    'un\'associazione. Verso questo PACS tiene circa 3 MB/s.',
+  normal: 'Se compare «Association Request Failed», tornare a Sequenziale.',
+  turbo: 'Se compare «Association Request Failed», scendere di modalità.',
+  single: '',
 };
 
 function updateSendModeNote() {
@@ -778,49 +775,35 @@ function onImportDone(result) {
   if (result.interrupted && result.stagingKept) {
     notes.push('Invio interrotto: i file restano in staging, «Copia comando» li rilancia da cmd.');
   } else if (result.interrupted) {
-    notes.push('Trasferimento interrotto: lo staging è già stato azzerato, si può ripartire da capo.');
+    notes.push('Trasferimento interrotto.');
   }
-  if (s.retried) notes.push(`${s.retried} file ritentati automaticamente.`);
+  if (s.retried) notes.push(`${s.retried} file ritentati.`);
   if (s.gaveUp === 'mute') {
-    notes.push(
-      'Ritentativi interrotti: il PACS non rispondeva più. Verificare rete e stato ' +
-        'dell\'esame, poi rilanciare l\'importazione.'
-    );
+    notes.push('Il PACS non rispondeva più: verificare la rete e riprovare.');
   } else if (s.gaveUp === 'refused') {
-    notes.push(
-      'Ritentativi interrotti: il PACS risponde ma rifiuta i file. Il problema è dal lato del PACS, ' +
-        'non della rete: rilanciare con «Copia comando» da cmd e, se il rifiuto si ripete, ' +
-        'segnalarlo all\'amministratore del PACS con il log.'
-    );
+    notes.push('Il PACS rifiuta i file: riprovare con «Copia comando» da cmd; se si ripete, segnalarlo con il log.');
   } else if (s.gaveUp) {
-    notes.push('Ritentativi interrotti: nessuna risposta riconoscibile da storescu. Vedere il log.');
+    notes.push('Nessuna risposta riconoscibile da storescu: vedere il log.');
   }
   if (s.stallKills) {
-    notes.push(`${s.stallKills} associazione/i abbattuta/e perché mute.`);
+    notes.push(`${s.stallKills} associazioni interrotte perché mute.`);
   }
   const statuses = Object.entries(s.failureStatuses || {});
   if (statuses.length) {
     notes.push('Non inviati: ' + statuses.map(([st, n]) => `${n} × ${st}`).join(', ') + '.');
   }
   if (result.copy && result.copy.recovered) {
-    notes.push(`${result.copy.recovered} file recuperati al secondo tentativo di lettura.`);
+    notes.push(`${result.copy.recovered} file recuperati al secondo tentativo.`);
   }
   if (result.copy && result.copy.driveStuck) {
     notes.push('Il lettore ha smesso di rispondere: inviati solo i file già copiati.');
   }
   if (result.copy && result.copy.skipped) {
-    notes.push(`${result.copy.skipped} file non copiati (timeout/lettura): invio parziale.`);
-  }
-  if (result.mode === 'single') {
-    notes.push('Invio sequenziale: una sola associazione, come da riga di comando.');
-  } else if (result.workers) {
-    notes.push(`${result.workers} associazioni in parallelo.`);
+    notes.push(`${result.copy.skipped} file non copiati: invio parziale.`);
   }
   if (result.iso) notes.push('ISO montata: verrà smontata alla pulizia.');
-  if (preview.tiles.size) {
-    notes.push(`Anteprima: ${preview.tiles.size} serie riconosciute durante la copia.`);
-  }
-  notes.push('Se un esame non compare subito nel PACS, attendere 2–3 min e cercare per data.');
+  // solo dopo un invio riuscito: se ci sono falliti non c'è niente da aspettare
+  if (s.success > 0 && !s.failed && !result.interrupted && !result.error) notes.push('Se l\'esame non compare nel PACS, attendere 2–3 minuti.');
   $('sum-note').textContent = notes.join(' ');
 
   $('summary').classList.remove('hidden');
@@ -869,9 +852,7 @@ $('btn-cleanup').addEventListener('click', async () => {
 function showArchived(a, automatic) {
   const box = $('archive-status');
   box.className = 'archive-status';
-  box.textContent =
-    (automatic ? "Invio non riuscito: l'esame è stato conservato" : 'Esame conservato') +
-    ` nell'archivio della postazione per ${a.daysLeft} giorni (${a.imageCount} immagini, ${a.seriesCount} serie).`;
+  box.textContent = (automatic ? 'Invio non riuscito: esame' : 'Esame') + ` conservato in archivio per ${a.daysLeft} giorni.`;
   const open = document.createElement('button');
   open.className = 'ghost';
   open.textContent = 'Apri nel viewer';
@@ -919,8 +900,8 @@ $('btn-copy-cmd').addEventListener('click', async () => {
   try {
     const r = await window.api.copyCommand();
     $('cleanup-status').textContent = r && r.ok
-      ? 'Comando storescu copiato: incollalo in cmd per rilanciare lo stesso invio sugli stessi file.'
-      : 'Nessun comando da copiare: il trasferimento non è ancora partito.';
+      ? 'Comando copiato: incollalo in cmd.'
+      : 'Nessun comando da copiare.';
   } catch (err) {
     $('cleanup-status').textContent = 'Errore copia: ' + err.message;
   }

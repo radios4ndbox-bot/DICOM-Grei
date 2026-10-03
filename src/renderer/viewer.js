@@ -382,7 +382,7 @@
     const f = p.frame;
     if (!p.series || !f) {
       p.msg.className = 'panel__msg';
-      p.msg.textContent = p.series ? '' : state.exams.length ? 'Scegli una serie dall\'elenco a sinistra.' : '';
+      p.msg.textContent = p.series ? '' : state.exams.length ? 'Scegli una serie.' : '';
       updateOverlay(p);
       return;
     }
@@ -522,8 +522,8 @@
       br.push(`L ${fmt(w.wc)}  W ${fmt(w.ww)}`);
     }
     if (f && f.lossy) br.push('compressione con perdita');
-    if (f && f.spacingKind === 'rivelatore') br.push('misure sul piano del rivelatore');
-    if (f && !spacingOf(p)) br.push('misure in pixel: spaziatura non dichiarata');
+    if (f && f.spacingKind === 'rivelatore') br.push('misure sul rivelatore');
+    if (f && !spacingOf(p)) br.push('misure in pixel');
     o.br.textContent = br.join('\n');
 
     updateMarkers(p);

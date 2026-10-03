@@ -299,6 +299,8 @@ ipcMain.handle('run-import', async (_e, opts) => {
     `Supporto: ${kind === 'optical' ? (iso ? 'ISO montata' : 'CD/DVD') : kind === 'folder' ? 'ZIP estratto' : 'USB'}` +
       ` · tipo ${plan.type}${ov ? ' (forzato)' : ''} · pattern ${plan.pattern} · strategia ${plan.strategy}`
   );
+  // la finestra mostra solo il tipo: il perché resta qui (testo fisso, nessun nome dal supporto)
+  if (plan.reasoning) log.line(`Classificazione: ${plan.reasoning}`);
   log.line(
     `Da copiare: ${plan.totalFiles} file · ${formatBytes(plan.totalBytes)}` +
       `${plan.bytesEstimated ? ' (stima)' : ''}` +

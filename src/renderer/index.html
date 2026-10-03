@@ -126,7 +126,7 @@
     </h1>
     <span class="pacs-badge da-cascata" id="pacs-badge">PACS @ 127.0.0.1:104</span>
     <!-- Archivio locale: gli esami non arrivati al PACS, consultabili per 20 giorni -->
-    <button id="btn-archive-open" class="archive-btn da-cascata" title="Esami conservati sulla postazione e viewer">
+    <button id="btn-archive-open" class="archive-btn da-cascata" title="Archivio e viewer">
       Archivio <span class="archive-btn__n" id="archive-count" hidden>0</span>
     </button>
     <button id="btn-settings" class="icon-btn da-cascata" title="Impostazioni" aria-label="Impostazioni">
@@ -269,8 +269,8 @@
 
       <div class="row between" id="finish-actions">
         <button id="btn-cleanup" class="danger hidden">Pulisci C:\tmp\dicom_grei</button>
-        <button id="btn-archive" class="ghost hidden" title="Conserva questo esame sulla postazione per 20 giorni: da usare quando l'invio è riuscito ma l'esame non compare nel PACS">Conserva in archivio</button>
-        <button id="btn-copy-cmd" class="ghost hidden" title="Copia la riga di comando di storescu, pronta da incollare in cmd">Copia comando</button>
+        <button id="btn-archive" class="ghost hidden" title="Conserva l'esame sulla postazione per 20 giorni">Conserva in archivio</button>
+        <button id="btn-copy-cmd" class="ghost hidden" title="Copia il comando storescu per cmd">Copia comando</button>
         <button id="btn-restart" class="ghost hidden">Nuova importazione</button>
       </div>
       <p id="archive-status" class="archive-status hidden"></p>
@@ -288,10 +288,7 @@
 
      <div class="viewer__grid" id="viewer-grid"></div>
 
-     <p class="viewer__empty" id="viewer-empty">
-       I riquadri compaiono durante la copia in locale: la prima immagine di ogni
-       serie — assiale, coronale e sagittale in TC, una per proiezione in RX.
-     </p>
+     <p class="viewer__empty" id="viewer-empty"></p>
 
      <div class="viewer__zoom" id="viewer-zoom" hidden>
        <div class="viewer__zoom-bar">
@@ -302,7 +299,7 @@
          <canvas id="zoom-canvas" width="16" height="16"></canvas>
        </div>
        <p class="viewer__hint muted">
-         Trascina per luminosità / contrasto · doppio clic per reimpostare
+         Trascina: luminosità / contrasto · doppio clic: reimposta
        </p>
      </div>
    </aside>

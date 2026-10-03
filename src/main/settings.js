@@ -29,9 +29,6 @@ const SCHEMA = [
   },
   {
     section: 'Timeout di rete',
-    note:
-      'DCMTK di default li lascia illimitati: senza questi valori storescu resta ' +
-      'appeso per sempre se il PACS smette di rispondere.',
     fields: [
       {
         key: 'DIMSE_TIMEOUT_S',
@@ -40,7 +37,7 @@ const SCHEMA = [
         min: 5,
         max: 3600,
         unit: 's',
-        hint: 'Quanto attendere la risposta a un C-STORE prima di considerarlo perso',
+        hint: 'Attesa massima della risposta a un file',
       },
       {
         key: 'ACSE_TIMEOUT_S',
@@ -62,9 +59,7 @@ const SCHEMA = [
   },
   {
     section: 'Trasferimento',
-    note:
-      'Se compare "Association Request Failed" il PACS accetta meno associazioni ' +
-      'contemporanee: abbassare i valori qui sotto.',
+    note: 'Se compare "Association Request Failed", abbassare questi valori.',
     fields: [
       {
         key: 'WORKERS_NORMAL',
@@ -105,9 +100,7 @@ const SCHEMA = [
         min: 30,
         max: 3600,
         unit: 's',
-        hint:
-          'Se da storescu non arriva un byte per questo tempo il processo viene ucciso ' +
-          'e i file non inviati rientrano nei ritentativi. Evita gli invii appesi per sempre',
+        hint: 'Senza dati per questo tempo l\'invio viene interrotto e ritentato',
       },
       {
         key: 'TCP_BUFFER_KB',
@@ -116,16 +109,13 @@ const SCHEMA = [
         min: 0,
         max: 16384,
         unit: 'KB',
-        hint: '0 = automatico di Windows (consigliato). Diverso da 0 imposta TCP_BUFFER_LENGTH di DCMTK',
+        hint: '0 = automatico (consigliato)',
       },
     ],
   },
   {
     section: 'Riga di comando di storescu',
-    note:
-      'Da usare per allineare l\'app a un lancio manuale da cmd che si comporta ' +
-      'diversamente: con gli stessi valori, l\'app lancia esattamente gli stessi ' +
-      'argomenti. Il pulsante «Copia comando» nello step 3 da\' la riga da incollare.',
+    note: 'Per allineare l\'app a un lancio manuale da cmd.',
     fields: [
       {
         key: 'PROPOSE_TS',
@@ -137,32 +127,24 @@ const SCHEMA = [
           { value: 'little', label: 'Explicit VR little endian (--propose-little)' },
           { value: 'implicit', label: 'Implicit VR little endian (--propose-implicit)' },
         ],
-        hint:
-          'Non c\'entra con la qualita\': questo storescu non ha codec JPEG, non ricomprime ' +
-          'mai nulla e i byte partono come stanno sul supporto. --propose-lossless serve ai ' +
-          'file gia\' compressi cosi\' sul CD, che altrimenti non trovano un contesto',
+        hint: 'Non cambia la qualita\': le immagini partono come sono sul supporto',
       },
       {
         key: 'SEND_TIMEOUTS',
         label: 'Passa i timeout a storescu',
         type: 'bool',
-        hint:
-          'Disattivandolo DCMTK aspetta il PACS senza limiti, come da cmd. ' +
-          'La guardia di inattivita\' dell\'app resta comunque attiva',
+        hint: 'Spento: storescu aspetta il PACS senza limiti, come da cmd',
       },
       {
         key: 'TCP_NODELAY_ON',
         label: 'TCP_NODELAY (disattiva Nagle)',
         type: 'bool',
-        hint: 'Un lancio da cmd non la imposta: toglierla per un confronto fedele',
+        hint: 'Da cmd non e\' impostata',
       },
     ],
   },
   {
     section: 'Anteprima',
-    note:
-      'I riquadri vengono costruiti sui file gia\' copiati in locale, su un thread ' +
-      'separato: non rallentano la copia e non rileggono il supporto.',
     fields: [
       {
         key: 'PREVIEW_MAX_TILES',
@@ -174,7 +156,7 @@ const SCHEMA = [
         // è fuori intervallo, e al caricamento un valore fuori intervallo viene
         // scartato per il predefinito. Nessuna migrazione da fare a mano.
         max: 4,
-        hint: '0 disattiva l\'anteprima. Uno per serie/orientamento, al massimo 4',
+        hint: '0 disattiva l\'anteprima',
       },
       {
         key: 'PREVIEW_MAX_SCAN',
@@ -195,7 +177,7 @@ const SCHEMA = [
         min: 1,
         max: 300,
         unit: 's',
-        hint: 'Oltre questo tempo il file viene saltato (CD/DVD rovinati)',
+        hint: 'Oltre questo tempo il file viene saltato',
       },
       {
         key: 'COPY_CONCURRENCY_FAST',
@@ -210,7 +192,7 @@ const SCHEMA = [
         type: 'int',
         min: 1,
         max: 8,
-        hint: 'Su un lettore ottico valori alti rallentano: la testina salta fra i file',
+        hint: 'Su CD/DVD valori alti rallentano',
       },
     ],
   },

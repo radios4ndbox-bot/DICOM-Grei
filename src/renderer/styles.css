@@ -115,6 +115,8 @@ main { padding: 0; min-width: 0; }
   min-height: 0;
 }
 .viewer__grid:empty { display: none; }
+/* senza testo non occupa spazio: resta solo l'intestazione «Anteprima» */
+.viewer__empty:empty { display: none; }
 .viewer__empty {
   margin: 0;
   padding: 26px 20px 30px;
