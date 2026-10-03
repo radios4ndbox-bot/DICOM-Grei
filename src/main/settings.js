@@ -169,8 +169,12 @@ const SCHEMA = [
         label: 'Riquadri del mosaico',
         type: 'int',
         min: 0,
-        max: 24,
-        hint: '0 disattiva l\'anteprima. Uno per serie/orientamento',
+        // Il massimo era 24 e il predefinito 12. Le postazioni già configurate
+        // hanno 12 nel file salvato (il salvataggio scrive tutti i campi): ora
+        // è fuori intervallo, e al caricamento un valore fuori intervallo viene
+        // scartato per il predefinito. Nessuna migrazione da fare a mano.
+        max: 4,
+        hint: '0 disattiva l\'anteprima. Uno per serie/orientamento, al massimo 4',
       },
       {
         key: 'PREVIEW_MAX_SCAN',
@@ -235,7 +239,7 @@ const DEFAULTS = {
   SEND_TIMEOUTS: true,
   TCP_NODELAY_ON: true,
   SEND_STALL_KILL_S: 180,
-  PREVIEW_MAX_TILES: 12,
+  PREVIEW_MAX_TILES: 4,
   PREVIEW_MAX_SCAN: 6000,
   FILE_COPY_TIMEOUT_S: 15,
   TCP_BUFFER_KB: 0,

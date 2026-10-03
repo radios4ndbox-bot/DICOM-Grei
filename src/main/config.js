@@ -125,8 +125,11 @@ module.exports = {
 
   // ---- Anteprima ---------------------------------------------------------
   // Riquadri del mosaico: uno per serie/orientamento (assiale, coronale,
-  // sagittale in TC; una proiezione per riquadro in RX).
-  PREVIEW_MAX_TILES: 12,
+  // sagittale in TC; una proiezione per riquadro in RX). Quattro al massimo:
+  // l'anteprima serve a riconoscere l'esame durante la copia, non a leggerlo
+  // (per quello c'è il viewer dell'archivio), e oltre i primi riquadri non
+  // aggiunge niente.
+  PREVIEW_MAX_TILES: 4,
   // Intestazioni lette al massimo, fra i file gia' copiati in locale.
   PREVIEW_MAX_SCAN: 6000,
   // Lato massimo della miniatura, in pixel.
