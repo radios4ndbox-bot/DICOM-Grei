@@ -13,8 +13,8 @@ function el(tag, className, text) {
 
 const DRIVE_LABEL = { 2: 'USB', 5: 'CD/DVD/ISO' };
 
-// step della barra: 0 = Copia, 1 = Invio a PACS, 2 = Pulizia
-const SP_STATUS = ['Copia in locale…', 'Invio a Synapse…', 'Pulizia cartella…'];
+// step della barra: 0 = Copia, 1 = Invio a PACS (o Archivio, in «Solo archivio»)
+const SP_STATUS = ['Copia in locale…', 'Invio a Synapse…'];
 
 const state = {
   drives: [],
@@ -49,7 +49,7 @@ function progressNodes() {
   return progressNodesCache;
 }
 
-// step: indice 0..2 ; frac: avanzamento 0..1 dentro lo step
+// step: indice 0..1 ; frac: avanzamento 0..1 dentro lo step
 function setProgress(step, frac, opts) {
   opts = opts || {};
   frac = Math.max(0, Math.min(1, frac));
@@ -59,7 +59,8 @@ function setProgress(step, frac, opts) {
     const f = i < step ? 1 : i === step ? frac : 0;
     el.style.strokeDashoffset = String(40 * (1 - f));
   });
-  [0, 1, 2].forEach((i) => {
+  // quanti nodi ha la barra lo dice la pagina, non questo ciclo
+  hubs.forEach((_hub, i) => {
     const done = i < step || (i === step && frac >= 1);
     hubs[i].classList.toggle('sp__hub--done', done);
     hubFills[i].classList.toggle('sp__hub-fill--done', done);
@@ -595,7 +596,9 @@ const SEND_MODE_NOTE = {
 };
 
 function updateSendModeNote() {
-  $('send-mode-note').textContent = SEND_MODE_NOTE[$('send-mode').value] || '';
+  const mode = $('send-mode').value;
+  $('send-mode-note').textContent = SEND_MODE_NOTE[mode] || '';
+  $('btn-start').textContent = mode === 'archive' ? 'Importa in archivio' : 'Avvia importazione';
 }
 $('send-mode').addEventListener('change', updateSendModeNote);
 updateSendModeNote();
@@ -608,9 +611,13 @@ $('btn-start').addEventListener('click', startImport);
 async function startImport() {
   state.finished = false;
 
+  const archiveOnly = $('send-mode').value === 'archive';
+  $('sp-label-2').textContent = archiveOnly ? 'Archivio' : 'Invio a PACS';
+  // i contatori dell'invio non hanno senso se al PACS non va niente
+  $('send-ok').hidden = $('send-err').hidden = archiveOnly;
+
   resetLog();
   $('summary').classList.add('hidden');
-  $('btn-cleanup').classList.add('hidden');
   $('btn-restart').classList.add('hidden');
   $('cleanup-status').textContent = '';
   $('btn-copy-cmd').classList.add('hidden');
@@ -633,9 +640,7 @@ async function startImport() {
     $('phase-eta').textContent = '';
     $('sum-note').textContent = err.message;
     $('summary').classList.remove('hidden');
-    // lo staging può essere rimasto sporco: la pulizia deve restare disponibile
-    $('btn-cleanup').classList.remove('hidden');
-    $('btn-cleanup').disabled = false;
+    // lo staging può essere rimasto sporco: lo svuota «Nuova importazione»
     $('btn-restart').classList.remove('hidden');
     return;
   }
@@ -690,16 +695,9 @@ window.api.onProgress((d) => {
     });
     $('send-ok').textContent = 'Success: ' + d.success;
     $('send-err').textContent = 'Error: ' + d.failed;
-  } else if (d.phase === 'cleanup') {
-    if (d.state === 'start') {
-      setProgress(2, 0.5, { status: 'Pulizia cartella…', detail: '' });
-    } else {
-      setProgress(2, 1, { status: 'Completato', detail: '' });
-      $('cleanup-status').textContent =
-        'Staging svuotato' + (d.result && d.result.isoDismounted ? ' · ISO smontata.' : '.');
-      $('btn-cleanup').disabled = true;
-    }
   }
+  // la pulizia ('cleanup') non ha più una fase a schermo: parte da sola con
+  // «Nuova importazione», che porta subito al passo 1
 });
 
 // ---------------------------------------------------------------- log
@@ -739,15 +737,27 @@ function onImportDone(result) {
   const s = result.send || {};
   $('btn-stop').classList.add('hidden');
 
-  if (result.interrupted) {
+  if (result.archiveOnly) {
+    // niente PACS: l'esito è quello dell'archivio
+    const ok = !!(result.archived && result.archived.id);
+    setProgress(1, ok ? 1 : 0, {
+      status: ok ? 'Importato in archivio' : 'Importazione in archivio non riuscita',
+      detail: `${result.copy ? result.copy.copied : 0} file copiati · niente inviato al PACS`,
+      eta: '',
+    });
+  } else if (result.interrupted) {
     setProgress(1, 0, {
       status: 'Trasferimento interrotto',
       detail: `${s.success || 0} file inviati prima dell'interruzione`,
       eta: '',
     });
   } else {
+    // "completato" solo se è arrivato tutto: con il PACS irraggiungibile
+    // diceva «Trasferimento completato · 0 inviati»
+    const sent = s.success || 0;
+    const outcome = result.error || sent === 0 ? 'Invio non riuscito' : s.failed ? 'Invio riuscito solo in parte' : 'Trasferimento completato';
     setProgress(1, 1, {
-      status: 'Trasferimento completato — premi «Pulisci»',
+      status: outcome,
       detail: `${s.success || 0} inviati · ${s.failed || 0} falliti`,
       eta: s.elapsedSec ? `Durata: ${formatEta(s.elapsedSec)}` : '',
     });
@@ -762,7 +772,9 @@ function onImportDone(result) {
   $('sum-ok').textContent = s.success || 0;
   $('sum-err').textContent = s.failed || 0;
   $('sum-skip').textContent = result.copy ? result.copy.skipped : 0;
-  $('sum-assoc').textContent = result.error
+  $('sum-assoc').textContent = result.archiveOnly
+    ? '— (solo archivio)'
+    : result.error
     ? 'ERRORE'
     : s.aborted
     ? 'ABORTITA'
@@ -807,11 +819,7 @@ function onImportDone(result) {
   $('sum-note').textContent = notes.join(' ');
 
   $('summary').classList.remove('hidden');
-  // sempre disponibile, anche quando il trasferimento è fallito o interrotto
-  $('btn-cleanup').classList.remove('hidden');
-  $('btn-cleanup').disabled = !!result.interrupted && !result.stagingKept;
   $('btn-restart').classList.remove('hidden');
-  $('btn-cleanup').dataset.iso = result.iso || '';
   // lo staging resta sul disco per la giornata: la riga copiata si può
   // rilanciare da cmd sugli stessi file, per confrontare come si deve
   if (result.send) $('btn-copy-cmd').classList.remove('hidden');
@@ -819,33 +827,11 @@ function onImportDone(result) {
   // Archivio locale. Se l'invio è fallito l'esame è già stato conservato dal
   // main; se è riuscito, il medico può conservarlo lui quando verifica che nel
   // PACS non compare.
-  if (result.archived && result.archived.id) showArchived(result.archived, true);
+  if (result.archived && result.archived.id) showArchived(result.archived, !result.archiveOnly);
   else if (result.archived && result.archived.error) showArchiveError(result.archived.error);
   else if (result.archivable) $('btn-archive').classList.remove('hidden');
 
-  if (result.interrupted && !result.stagingKept) {
-    $('cleanup-status').textContent = 'Staging azzerato automaticamente dopo l’interruzione.';
-  }
 }
-
-$('btn-cleanup').addEventListener('click', async () => {
-  const withIso = !!$('btn-cleanup').dataset.iso;
-  if (!confirm('Svuotare C:\\tmp\\dicom_grei' + (withIso ? " e smontare l'ISO" : '') + '?')) return;
-  $('btn-cleanup').disabled = true;
-  try {
-    const r = await window.api.cleanup();
-    $('btn-archive').classList.add('hidden');
-    showModal(
-      'Pulizia completata',
-      'Cartella di staging svuotata' +
-        (r && r.isoDismounted ? " e immagine ISO smontata." : '.') +
-        ' Il supporto può essere rimosso.'
-    );
-  } catch (err) {
-    $('cleanup-status').textContent = 'Errore pulizia: ' + err.message;
-    $('btn-cleanup').disabled = false;
-  }
-});
 
 // ---------------------------------------------------------------- archivio
 
@@ -907,7 +893,25 @@ $('btn-copy-cmd').addEventListener('click', async () => {
   }
 });
 
-$('btn-restart').addEventListener('click', () => {
+// «Nuova importazione» svuota da sola la cartella temporanea (e smonta l'ISO,
+// se c'era): non è più un passo da fare a mano. Se la pulizia non riesce si
+// riparte lo stesso: la copia successiva svuota comunque lo staging prima di
+// scriverci, e la pulizia giornaliera fa il resto.
+$('btn-restart').addEventListener('click', async () => {
+  $('btn-restart').disabled = true;
+  $('phase-label').textContent = 'Pulizia della cartella temporanea…';
+  try {
+    await window.api.cleanup();
+  } catch {
+    // niente da mostrare: si riparte comunque
+  }
+  $('btn-restart').disabled = false;
+  $('btn-restart').classList.add('hidden');
+  // «Solo archivio» vale per l'esame per cui è stato scelto: il successivo
+  // torna all'invio al PACS, altrimenti resterebbe fuori senza che nessuno
+  // l'abbia deciso
+  $('send-mode').value = 'single';
+  updateSendModeNote();
   previewReset();
   state.drive = state.prepared = state.plan = null;
   state.finished = false;
@@ -915,8 +919,6 @@ $('btn-restart').addEventListener('click', () => {
   $('detect-status').textContent = '';
   $('cleanup-status').textContent = '';
   $('phase-eta').textContent = '';
-  $('btn-cleanup').disabled = false;
-  $('btn-cleanup').classList.add('hidden');
   $('btn-copy-cmd').classList.add('hidden');
   resetArchiveStatus();
   $('btn-stop').classList.add('hidden');

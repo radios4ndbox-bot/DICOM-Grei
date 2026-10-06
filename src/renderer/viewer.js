@@ -1153,7 +1153,11 @@
 
   // ---------------------------------------------------------------- elenco esami
 
-  const REASON = { 'invio-fallito': 'Invio non riuscito', 'non-indicizzato': 'Non indicizzato dal PACS' };
+  const REASON = {
+    'invio-fallito': 'Invio non riuscito',
+    'non-indicizzato': 'Non indicizzato dal PACS',
+    'solo-archivio': 'Solo archivio',
+  };
 
   function examLine(m) {
     return [m.modalities && m.modalities.join('/'), m.study.date, m.study.description].filter(Boolean).join(' · ');

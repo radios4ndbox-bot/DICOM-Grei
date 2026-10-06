@@ -388,14 +388,13 @@ select {
 .progress .sp__labels {
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   font-size: 12px;
   color: var(--muted);
   margin-top: 4px;
 }
-.progress .sp__labels li:nth-child(1) { text-align: left; }
-.progress .sp__labels li:nth-child(2) { text-align: center; }
-.progress .sp__labels li:nth-child(3) { text-align: right; }
+/* ogni etichetta sotto il suo tratto di barra */
+.progress .sp__labels li { text-align: center; }
 .progress .status { text-align: center; font-weight: 600; margin-top: 12px; }
 .progress #phase-detail { text-align: center; margin-top: 2px; }
 

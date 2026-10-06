@@ -264,7 +264,11 @@ ipcMain.handle('run-import', async (_e, opts) => {
   // Prima di copiare: se storescu manca lo si deve sapere ORA, non dopo
   // minuti di lettura del CD (nel report sul campo la copia da sola arriva a 7
   // minuti). Stesso discorso per un pattern non ammesso.
-  preflightSend(plan.pattern);
+  // «Solo archivio»: l'esame si copia e resta sulla postazione, senza passare
+  // dal PACS. storescu non serve, quindi non lo si controlla nemmeno: deve
+  // funzionare anche su una postazione senza PACS configurato.
+  const archiveOnly = !!(opts && opts.mode === 'archive');
+  if (!archiveOnly) preflightSend(plan.pattern);
 
   const iso = (session.prepared && session.prepared.iso) || null;
 
@@ -313,11 +317,15 @@ ipcMain.handle('run-import', async (_e, opts) => {
     log.line(`Impostazioni: ${origin}`);
     for (const w of d.warnings) log.line(`ATTENZIONE: ${w}`);
   }
-  log.line(
-    `Invio: ${mode === 'single' ? 'sequenziale' : mode} · ` +
-      `${workers} ${workers === 1 ? 'associazione' : 'associazioni'}`
-  );
-  log.line(`storescu: ${config.STORESCU}`);
+  if (archiveOnly) {
+    log.line('Invio: NESSUNO, solo archivio locale');
+  } else {
+    log.line(
+      `Invio: ${mode === 'single' ? 'sequenziale' : mode} · ` +
+        `${workers} ${workers === 1 ? 'associazione' : 'associazioni'}`
+    );
+    log.line(`storescu: ${config.STORESCU}`);
+  }
   if (log.path) emitLog(`> log dell'importazione: ${log.path}`);
 
   // `busy` copre TUTTA l'importazione, copia compresa. `session.send` da solo
@@ -345,6 +353,8 @@ ipcMain.handle('run-import', async (_e, opts) => {
     if (result.interrupted && result.stagingKept) log.line('Esito: INVIO INTERROTTO, file lasciati in staging');
     else if (result.interrupted) log.line('Esito: INTERROTTA, staging azzerato');
     else if (result.error) log.line('Esito: ERRORE — ' + result.error);
+    else if (result.archiveOnly) log.line('Esito: solo archivio, niente inviato al PACS');
+    else if (result.archiveOnly) log.line('Esito: solo archivio, niente inviato al PACS');
     if (result.send && !result.error) {
       const s = result.send;
       log.line(
@@ -415,6 +425,13 @@ ipcMain.handle('run-import', async (_e, opts) => {
     }
 
     session.staged = { partDirs: copy.partDirs };
+
+    if (archiveOnly) {
+      log.section('ARCHIVIO');
+      const archived = await archiveStaged('solo-archivio', emitLog);
+      // se l'archivio non è scrivibile lo staging resta: «Conserva in archivio» può riprovare
+      return finish({ copy, send: null, iso, archiveOnly: true, archived, archivable: !(archived && archived.id) });
+    }
 
     log.section('INVIO A PACS');
     const pending = sendStoreScu(

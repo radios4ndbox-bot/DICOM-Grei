@@ -30,6 +30,8 @@ const FILE_RE = /^\d{6}\.dcm$/;
 const REASONS = {
   'invio-fallito': 'Invio al PACS non riuscito',
   'non-indicizzato': 'Non indicizzato dal PACS',
+  // scelta del medico: l'esame non va al PACS, lo guarda qui e poi lo elimina
+  'solo-archivio': 'Importato solo in archivio',
 };
 
 let busy = false;

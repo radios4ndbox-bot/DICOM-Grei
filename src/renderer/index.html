@@ -201,6 +201,7 @@
           <option value="single" selected>Sequenziale · una sola associazione (come da CMD)</option>
           <option value="normal">Parallelo · poche associazioni insieme</option>
           <option value="turbo">Turbo · molte associazioni insieme</option>
+          <option value="archive">Solo archivio · non invia al PACS</option>
         </select>
       </div>
       <div class="row">
@@ -217,29 +218,23 @@
       <div class="progress">
         <svg class="sp" viewBox="0 0 240 24" role="img" aria-label="Avanzamento trasferimento">
           <g class="sp__bars">
-            <line class="sp__bar" x1="10" y1="12" x2="70" y2="12" />
-            <line class="sp__bar" x1="70" y1="12" x2="150" y2="12" />
-            <line class="sp__bar" x1="150" y1="12" x2="230" y2="12" />
-            <line class="sp__bar-fill" x1="10" y1="12" x2="70" y2="12" pathLength="40" />
-            <line class="sp__bar-fill" x1="70" y1="12" x2="150" y2="12" pathLength="40" />
-            <line class="sp__bar-fill" x1="150" y1="12" x2="230" y2="12" pathLength="40" />
+            <line class="sp__bar" x1="10" y1="12" x2="120" y2="12" />
+            <line class="sp__bar" x1="120" y1="12" x2="230" y2="12" />
+            <line class="sp__bar-fill" x1="10" y1="12" x2="120" y2="12" pathLength="40" />
+            <line class="sp__bar-fill" x1="120" y1="12" x2="230" y2="12" pathLength="40" />
           </g>
           <g class="sp__hubs">
-            <circle class="sp__hub" cx="70" cy="12" r="6" />
-            <circle class="sp__hub" cx="150" cy="12" r="6" />
+            <circle class="sp__hub" cx="120" cy="12" r="6" />
             <circle class="sp__hub" cx="230" cy="12" r="6" />
-            <circle class="sp__hub-fill" cx="70" cy="12" r="10" transform="rotate(-90 70 12)" />
-            <circle class="sp__hub-fill" cx="150" cy="12" r="10" transform="rotate(-90 150 12)" />
+            <circle class="sp__hub-fill" cx="120" cy="12" r="10" transform="rotate(-90 120 12)" />
             <circle class="sp__hub-fill" cx="230" cy="12" r="10" transform="rotate(-90 230 12)" />
-            <circle class="sp__dot" cx="70" cy="12" r="0" />
-            <circle class="sp__dot" cx="150" cy="12" r="0" />
+            <circle class="sp__dot" cx="120" cy="12" r="0" />
             <circle class="sp__dot" cx="230" cy="12" r="0" />
           </g>
         </svg>
         <ul class="sp__labels">
           <li>Copia</li>
-          <li>Invio a PACS</li>
-          <li>Pulizia</li>
+          <li id="sp-label-2">Invio a PACS</li>
         </ul>
         <p class="status" id="phase-label">Preparazione…</p>
         <p class="muted mono" id="phase-detail"></p>
@@ -268,7 +263,6 @@
       </div>
 
       <div class="row between" id="finish-actions">
-        <button id="btn-cleanup" class="danger hidden">Pulisci C:\tmp\dicom_grei</button>
         <button id="btn-archive" class="ghost hidden" title="Conserva l'esame sulla postazione per 20 giorni">Conserva in archivio</button>
         <button id="btn-copy-cmd" class="ghost hidden" title="Copia il comando storescu per cmd">Copia comando</button>
         <button id="btn-restart" class="ghost hidden">Nuova importazione</button>
@@ -309,7 +303,7 @@
 
   <p class="copyright">© 2026 StructuRad. All rights reserved. Powered by RadioPako.</p>
 
-  <!-- Conferma post-pulizia, stesso stile della splash, comparsa a dissolvenza -->
+  <!-- Finestra di avviso (errori delle impostazioni), comparsa a dissolvenza -->
   <div class="modal" id="modal" hidden>
     <div class="modal__card">
       <img class="modal__globe" src="assets/globe.svg" alt="" width="56" height="56" />

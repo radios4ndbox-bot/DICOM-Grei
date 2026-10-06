@@ -56,7 +56,13 @@ l'avvio: viene ignorato e segnalato nel dialogo delle impostazioni e nel log.
 
 ## Flusso
 
-`RILEVA SUPPORTO → ANALIZZA STRUTTURA → CLASSIFICA (A–F) → COPIA IN LOCALE → INVIA → PULISCI`
+`RILEVA SUPPORTO → ANALIZZA STRUTTURA → CLASSIFICA (A–F) → COPIA IN LOCALE → INVIA`
+
+La cartella temporanea non si pulisce più a mano: **«Nuova importazione»** la
+svuota da sola (e smonta l'ISO, se c'era) prima di ripartire. Finché non la si
+preme i file restano lì, per «Copia comando» e «Conserva in archivio»; se
+l'app viene chiusa prima, ci pensano la copia successiva e la pulizia
+giornaliera.
 
 Durante la copia in locale il pannello a destra si riempie con l'**anteprima a
 mosaico**: un riquadro per serie, con la *prima* immagine di ciascuna. In TC
@@ -148,7 +154,13 @@ viewer interno, per **20 giorni** (`ARCHIVE_DAYS`).
   intero, non i soli file falliti: uno studio a metà non si legge;
 - a mano, con **«Conserva in archivio»** a fine importazione: per l'esame
   inviato senza errori ma che il medico ha verificato come non indicizzato dal
-  PACS. Il pulsante c'è finché lo staging non viene pulito.
+  PACS. Il pulsante c'è finché non si preme «Nuova importazione»;
+- per scelta, con **«Solo archivio · non invia al PACS»** nella tendina
+  dell'invio: l'esame si copia e resta solo sulla postazione, per guardarlo
+  ed eliminarlo. `storescu` non viene nemmeno controllato, quindi funziona
+  anche senza PACS configurato. Vale per quell'esame: alla «Nuova
+  importazione» la tendina torna sull'invio al PACS, perché l'esame dopo non
+  resti fuori senza che nessuno l'abbia deciso.
 
 Un'importazione riuscita non lascia niente. Lo stesso studio archiviato due
 volte resta una volta sola, con la scadenza che riparte.
@@ -430,7 +442,7 @@ riga `icon: build/icon.ico`.
 - I supporti vengono rilevati da soli all'avvio e a ogni «Nuova importazione».
 - La copia in `C:\tmp\dicom_grei` avviene sempre prima dell'invio (percorsi con spazi, lettura da ottica, invio parziale su DVD danneggiati). Ogni file ha un timeout di lettura configurabile (`FILE_COPY_TIMEOUT_MS`).
 - Lo staging delle versioni precedenti (`C:\tmp\dicom_import`, `_src`, `.day`) viene tolto dalla pulizia giornaliera, ma solo quando la sua data non è quella di oggi: su una postazione condivisa un altro utente può avere ancora la versione vecchia aperta.
-- La pulizia finale è sempre dietro conferma dell'utente.
+- La pulizia dello staging parte da sola con «Nuova importazione», senza conferma: l'archivio non ne risente, i suoi file sono collegamenti fisici.
 
 ## Limiti noti
 
