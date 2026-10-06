@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const url = require('url');
 const { BrowserWindow, ipcMain, screen } = require('electron');
@@ -17,14 +18,14 @@ const archive = require('./archive');
  */
 
 const APP_ICON = path.join(__dirname, '..', '..', 'build', 'icon.ico');
-// Due decodifiche insieme: quella che il medico sta guardando non resta in
-// coda dietro al precaricamento delle fette vicine.
-const WORKERS = 2;
+// Decodifiche in parallelo. Il viewer ne chiede al massimo quattro alla volta
+// (la fetta guardata, le vicine, il resto della serie): tanti worker quanti i
+// processori lo permettono, lasciandone due al resto dell'app e a Windows.
+const WORKERS = Math.max(2, Math.min(4, os.cpus().length - 2));
 
 let win = null;            // il viewer con l'elenco degli esami: uno solo
 const compares = new Set(); // finestre di confronto: quante se ne vuole
 let workers = [];
-let nextWorker = 0;
 let seq = 0;
 const pending = new Map(); // id richiesta -> { resolve, worker }
 
@@ -66,7 +67,12 @@ function stopWorkers() {
 function decode(file, frame) {
   startWorkers();
   return new Promise((resolve) => {
-    const w = workers[nextWorker++ % workers.length];
+    // al worker con meno lavoro in coda, non a turno: una decodifica lenta
+    // (JPEG 2000) non deve tenere ferma dietro di sé la fetta che si guarda
+    const load = new Map(workers.map((x) => [x, 0]));
+    for (const p of pending.values()) load.set(p.worker, (load.get(p.worker) || 0) + 1);
+    let w = workers[0];
+    for (const x of workers) if (load.get(x) < load.get(w)) w = x;
     const id = ++seq;
     pending.set(id, { resolve, worker: w });
     w.postMessage({ id, file, frame });
@@ -211,4 +217,4 @@ function register() {
   });
 }
 
-module.exports = { open, openCompare, placeCompare, close, register, window: () => win, compares: () => [...compares] };
+module.exports = { open, openCompare, placeCompare, close, register, WORKERS, window: () => win, compares: () => [...compares] };

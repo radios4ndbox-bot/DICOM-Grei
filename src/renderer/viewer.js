@@ -103,6 +103,10 @@
     series: null,
     idx: 0,
     frame: null,
+    shown: null,   // indice della fetta davvero a schermo (può restare indietro scorrendo veloce)
+    dir: 1,        // verso dell'ultimo scorrimento: si precarica di più da quella parte
+    fast: false,   // ricampionamento veloce mentre si scorre
+    settle: 0,
     gen: 0,
     wc: null,  // null = finestra dell'immagine
     ww: null,
@@ -153,6 +157,11 @@
     p.series = series;
     p.sel = null;
     p.draft = null;
+    // la serie di prima non resta a schermo con i dati di quella nuova
+    p.frame = null;
+    p.shown = null;
+    p.dir = 1;
+    delete p.el.dataset.shown;
     resetView(p);
     p.slider.max = String(Math.max(0, series.count - 1));
     setIndex(p, idx || 0, true);
@@ -162,6 +171,9 @@
   function clearPanel(p) {
     stopCine(p);
     p.exam = p.series = p.frame = null;
+    p.shown = null;
+    clearTimeout(p.settle);
+    delete p.el.dataset.shown;
     p.gen++;
     p.slider.max = '0';
     render(p);
@@ -170,6 +182,7 @@
   function setIndex(p, idx, fromSync) {
     if (!p.series) return;
     idx = Math.max(0, Math.min(p.series.count - 1, idx));
+    if (idx !== p.idx) p.dir = idx > p.idx ? 1 : -1;
     p.idx = idx;
     p.slider.value = String(idx);
     p.sel = null;
@@ -194,37 +207,134 @@
     if (best !== o.idx) setIndex(o, best, true);
   }
 
-  async function show(p) {
-    const gen = ++p.gen;
-    const exam = p.exam;
-    const im = p.series.images[p.idx];
-    const key = keyOf(exam.id, im);
-    const cached = frames.get(key);
-    if (cached) {
-      p.frame = cached;
-      render(p);
-    } else {
-      // nel frattempo resta l'immagine di prima: scorrendo non si vede nero
-      updateOverlay(p, true);
-      const f = await getFrame(exam.id, im);
-      if (gen !== p.gen) return; // nel frattempo si è passati ad altro
-      p.frame = f;
-      render(p);
-    }
-    prefetch(p, gen);
+  // ---------------------------------------------------------------- caricamento
+
+  /* Cosa decodificare lo decide la posizione di ADESSO, non la storia degli
+     scatti di rotella.
+
+     Prima ogni scatto chiedeva la sua fetta, e una richiesta partita non si
+     può annullare: su una postazione lenta si formava una coda, e la fetta
+     giusta arrivava dopo tutte quelle già superate (misurato con la decodifica
+     rallentata a 60 ms: in media 26 fette di ritardo, fino a 139, e 4,7 s per
+     vedere l'immagine giusta dopo l'ultimo scatto).
+
+     Ora le richieste in volo sono al massimo SLOTS, e ogni volta che se ne
+     libera una si chiede ciò che serve in quel momento, in quest'ordine:
+       1. la fetta che si sta guardando, in ciascun pannello;
+       2. le vicine, di più nel verso in cui si scorre;
+       3. il resto della serie, dal più vicino, finché sta in memoria: dopo
+          qualche secondo una TC è tutta pronta e scorrere non aspetta più
+          niente. Questo terzo livello non occupa mai l'ultimo posto libero,
+          che resta per ciò che serve subito. */
+  const SLOTS = 4;   // il main ha da 2 a 4 worker
+  const AHEAD = 24;
+  const BEHIND = 6;
+  let flying = 0;
+
+  function want(p, j) {
+    if (!p.series || j < 0 || j >= p.series.count) return null;
+    const im = p.series.images[j];
+    const key = keyOf(p.exam.id, im);
+    return frames.has(key) || inflight.has(key) ? null : { examId: p.exam.id, im };
   }
 
-  /** Le fette vicine, nel verso in cui è più probabile che si scorra. */
-  async function prefetch(p, gen) {
-    const s = p.series;
-    const order = [1, 2, -1, 3, 4, -2, 5, 6, -3, 7, 8];
-    for (const d of order) {
-      if (gen !== p.gen) return;
-      const j = p.idx + d;
-      if (j < 0 || j >= s.count) continue;
-      const im = s.images[j];
-      if (!frames.has(keyOf(p.exam.id, im))) await getFrame(p.exam.id, im);
+  function nextUrgent(order) {
+    for (const p of order) {
+      const job = want(p, p.idx);
+      if (job) return job;
     }
+    for (const p of order) {
+      if (!p.series) continue;
+      const dir = p.dir || 1;
+      for (let d = 1; d <= AHEAD; d++) {
+        const job = want(p, p.idx + d * dir) || (d <= BEHIND ? want(p, p.idx - d * dir) : null);
+        if (job) return job;
+      }
+    }
+    return null;
+  }
+
+  function nextBackground(order) {
+    for (const p of order) {
+      if (!p.series) continue;
+      // quante fette per lato stanno in una parte della memoria (due pannelli, più il resto)
+      const bytes = p.series.rows * p.series.cols * 2;
+      const reach = Math.min(p.series.count, Math.floor((CACHE_MAX * 0.4) / bytes / 2));
+      const dir = p.dir || 1;
+      for (let d = AHEAD + 1; d <= reach; d++) {
+        const job = want(p, p.idx + d * dir) || want(p, p.idx - d * dir);
+        if (job) return job;
+      }
+    }
+    return null;
+  }
+
+  function pump() {
+    const order = [active(), other(active())];
+    while (flying < SLOTS) {
+      const job = nextUrgent(order) || (flying < SLOTS - 1 ? nextBackground(order) : null);
+      if (!job) return;
+      flying++;
+      getFrame(job.examId, job.im).then((f) => {
+        flying--;
+        arrived(f);
+        pump();
+      });
+    }
+  }
+
+  /** Una fetta è pronta: se è quella che si guarda, o più vicina di quella a schermo, si mostra. */
+  function arrived(f) {
+    for (const p of panels) {
+      if (!p.series) continue;
+      const images = p.series.images;
+      if (keyOf(p.exam.id, images[p.idx]) === f.key) {
+        display(p, f, p.idx);
+        continue;
+      }
+      // Scorrendo più veloce di quanto si riesca a decodificare, la fetta
+      // chiesta è già superata quando arriva. Mostrarla lo stesso, se avvicina
+      // a dove si è, fa vedere il movimento invece di un'immagine ferma. I dati
+      // a schermo dicono sempre quale fetta è mostrata davvero.
+      if (f.error || p.shown === p.idx) continue;
+      const lo = Math.max(0, p.idx - AHEAD);
+      const hi = Math.min(images.length - 1, p.idx + AHEAD);
+      for (let j = lo; j <= hi; j++) {
+        if (keyOf(p.exam.id, images[j]) !== f.key) continue;
+        if (p.shown == null || Math.abs(j - p.idx) < Math.abs(p.shown - p.idx)) display(p, f, j);
+        break;
+      }
+    }
+  }
+
+  function display(p, f, j) {
+    p.frame = f;
+    p.shown = j;
+    p.el.dataset.shown = String(j); // per le prove di fluidità
+    renderSoon(p);
+  }
+
+  function show(p) {
+    if (!p.series) return;
+    const key = keyOf(p.exam.id, p.series.images[p.idx]);
+    const hit = frames.get(key);
+    // Mentre si scorre il ricampionamento è quello veloce; a scorrimento fermo
+    // l'immagine viene ridisegnata con quello di qualità. Senza scheda grafica
+    // il ricampionamento di qualità a ogni fetta è il costo maggiore.
+    p.fast = true;
+    clearTimeout(p.settle);
+    p.settle = setTimeout(() => {
+      p.fast = false;
+      renderSoon(p);
+    }, 140);
+    if (hit) {
+      frames.delete(key);
+      frames.set(key, hit); // di nuovo il più recente
+      display(p, hit, p.idx);
+    } else {
+      renderSoon(p); // resta l'immagine di prima, con i suoi dati
+    }
+    pump();
   }
 
   // ---------------------------------------------------------------- finestra
@@ -254,6 +364,34 @@
     return f.range;
   }
 
+  /* Tabella valore memorizzato -> grigio, già nel formato del canvas.
+     Si ricalcola solo quando cambiano finestra, negativo o scala dei valori
+     (65536 voci): scorrendo, ogni pixel è una lettura in tabella invece di
+     una moltiplicazione, una somma e due confronti. */
+  function lutFor(p, f, w) {
+    const inv = p.invert !== f.invert; // MONOCHROME1 è già un negativo
+    const size = f.pixels.BYTES_PER_ELEMENT === 1 ? 256 : 65536;
+    const off = f.signed && size === 65536 ? 32768 : 0;
+    const key = `${w.wc}|${w.ww}|${f.slope}|${f.intercept}|${inv}|${size}|${off}`;
+    if (p.lutKey === key) return p.lut;
+    const lut = p.lut && p.lut.length === size ? p.lut : new Uint32Array(size);
+    // (valore·pendenza + intercetta − limite inferiore) / ampiezza · 255
+    const lo = w.wc - 0.5 - (w.ww - 1) / 2;
+    const span = Math.max(1e-6, w.ww - 1);
+    const k = (f.slope * 255) / span;
+    const b = ((f.intercept - lo) * 255) / span;
+    for (let i = 0; i < size; i++) {
+      let g = (i - off) * k + b;
+      g = g < 0 ? 0 : g > 255 ? 255 : g | 0;
+      if (inv) g = 255 - g;
+      lut[i] = 0xff000000 | (g << 16) | (g << 8) | g;
+    }
+    p.lut = lut;
+    p.lutKey = key;
+    p.lutOff = off;
+    return lut;
+  }
+
   function paintImage(p) {
     const f = p.frame;
     const w = f.samples === 1 ? windowOf(p) : null;
@@ -265,10 +403,15 @@
     if (c.width !== f.cols || c.height !== f.rows) {
       c.width = f.cols;
       c.height = f.rows;
+      p.imgData = null;
     }
     const ctx = c.getContext('2d');
-    const id = ctx.createImageData(f.cols, f.rows);
-    const out = new Uint32Array(id.data.buffer);
+    // lo stesso buffer per tutte le fette della serie: niente allocazioni scorrendo
+    if (!p.imgData) {
+      p.imgData = ctx.createImageData(f.cols, f.rows);
+      p.imgOut = new Uint32Array(p.imgData.data.buffer);
+    }
+    const out = p.imgOut;
     const px = f.pixels;
     const n = f.rows * f.cols;
 
@@ -280,21 +423,11 @@
         out[i] = 0xff000000 | (b << 16) | (g << 8) | r;
       }
     } else {
-      // (valore·pendenza + intercetta − limite inferiore) / ampiezza · 255,
-      // ridotto a una moltiplicazione e una somma per pixel
-      const lo = w.wc - 0.5 - (w.ww - 1) / 2;
-      const span = Math.max(1e-6, w.ww - 1);
-      const k = (f.slope * 255) / span;
-      const b = ((f.intercept - lo) * 255) / span;
-      const inv = p.invert !== f.invert; // MONOCHROME1 è già un negativo
-      for (let i = 0; i < n; i++) {
-        let g = px[i] * k + b;
-        g = g < 0 ? 0 : g > 255 ? 255 : g | 0;
-        if (inv) g = 255 - g;
-        out[i] = 0xff000000 | (g << 16) | (g << 8) | g;
-      }
+      const lut = lutFor(p, f, w);
+      if (p.lutOff) for (let i = 0; i < n; i++) out[i] = lut[px[i] + 32768];
+      else for (let i = 0; i < n; i++) out[i] = lut[px[i]];
     }
-    ctx.putImageData(id, 0, 0);
+    ctx.putImageData(p.imgData, 0, 0);
   }
 
   // ---------------------------------------------------------------- geometria
@@ -398,11 +531,12 @@
     const m = matrixOf(p);
     ctx.setTransform(m);
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingQuality = p.fast ? 'low' : 'high';
     ctx.drawImage(p.img, 0, 0);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    if (!state.hideMeasures) drawMeasures(p, m);
+    // le misure appartengono alla fetta scelta: non si disegnano sopra un'altra
+    if (!state.hideMeasures && p.shown === p.idx) drawMeasures(p, m);
     drawProbe(p);
     updateOverlay(p);
   }
@@ -502,7 +636,12 @@
     const ex = p.exam;
     const s = p.series;
     const f = p.frame && !p.frame.error ? p.frame : null;
-    const im = s.images[p.idx];
+    // Scorrendo più veloce della decodifica, a schermo può esserci una fetta
+    // diversa da quella chiesta: numero e posizione sono i suoi, e i puntini
+    // dicono che quella chiesta sta arrivando.
+    const j = p.frame && p.shown != null ? p.shown : p.idx;
+    const im = s.images[j];
+    loading = !p.frame || j !== p.idx;
 
     o.tl.textContent = [ex.patient.name || 'Paziente senza nome', ex.patient.id, ex.patient.birth && 'nato/a ' + ex.patient.birth]
       .filter(Boolean)
@@ -511,7 +650,7 @@
       .filter(Boolean)
       .join('\n');
 
-    const bl = [`Im ${p.idx + 1}/${s.count}${loading ? ' …' : ''}`];
+    const bl = [`Im ${j + 1}/${s.count}${loading ? ' …' : ''}`];
     if (im.l != null) bl.push(`Pos ${fmt(im.l, 1)} mm${s.thickness ? ' · sp ' + fmt(s.thickness, 1) + ' mm' : ''}`);
     if (f) bl.push(`${f.cols}×${f.rows} · zoom ${fmt(p.zoom * 100)}%`);
     o.bl.textContent = bl.join('\n');
@@ -713,6 +852,31 @@
 
   const MEASURE_TOOLS = new Set(['dist', 'angle', 'roi']);
   let lastLayoutWheel = 0;
+
+  /* Quante fette per un evento di rotella.
+     Prima era sempre una, qualunque fosse l'ampiezza: girando veloce una
+     rotella a scorrimento libero (che manda più tacche in un evento) si
+     avanzava un terzo del dovuto, e su un trackpad (decine di eventi minuscoli)
+     si volava via di centinaia di fette.
+     · evento "a tacche" (ampiezza da mezza tacca in su): una fetta per tacca;
+     · eventi piccoli: si sommano, una fetta ogni 40 unità. */
+  let wheelAcc = 0;
+  let wheelAt = 0;
+  function wheelSteps(e) {
+    let dy = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 300 : 1);
+    if (!dy) return 0;
+    if (Math.abs(dy) >= 50) {
+      wheelAcc = 0;
+      return Math.sign(dy) * Math.max(1, Math.round(Math.abs(dy) / 100));
+    }
+    const now = performance.now();
+    if (now - wheelAt > 300 || Math.sign(dy) !== Math.sign(wheelAcc)) wheelAcc = 0;
+    wheelAt = now;
+    wheelAcc += dy;
+    const steps = Math.trunc(wheelAcc / 40);
+    wheelAcc -= steps * 40;
+    return steps;
+  }
   let momentaryUsed = false;
 
   /** Trascinamenti con modificatore sul tasto sinistro, come in Synapse. */
@@ -739,6 +903,8 @@
       if (e.button === 0 && held.has('x') && !e.shiftKey) return void clearPanel(p);
       if (!p.frame || p.frame.error) return;
       const pos = canvasPoint(p, e);
+      // sulla fetta di passaggio non si misura: un attimo e arriva quella giusta
+      if (p.shown !== p.idx && e.button === 0 && (MEASURE_TOOLS.has(state.tool) || state.tool === 'probe')) return;
       const mode = e.button === 2 ? 'wl' : e.button === 1 ? 'pan' : modifierMode(e) || state.tool;
       if (e.button === 1) e.preventDefault();
       c.setPointerCapture(e.pointerId);
@@ -868,7 +1034,8 @@
           if (now - lastLayoutWheel > 350) setLayout(state.layout === 1 ? 2 : 1);
           lastLayoutWheel = now;
         } else {
-          setIndex(p, p.idx + (e.deltaY > 0 ? 1 : -1));
+          const steps = wheelSteps(e);
+          if (steps) setIndex(p, p.idx + steps);
         }
       },
       { passive: false }

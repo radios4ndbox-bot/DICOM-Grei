@@ -249,6 +249,19 @@ alla dimensione preferita, qui è lo schermo intero. Le scorciatoie di Synapse
 per funzioni che il viewer non ha (freccia, testo, ROI a mano libera, cerchio,
 lente, linee di riferimento, MPR, protocolli di lettura) non sono assegnate.
 
+**Scorrimento.** Cosa decodificare lo decide la posizione di adesso, non la
+storia degli scatti di rotella: al massimo quattro richieste in volo, e a ogni
+posto libero si chiede prima la fetta guardata, poi le vicine (di più nel verso
+in cui si scorre), poi il resto della serie finché sta in memoria. Dopo qualche
+secondo una TC è tutta pronta. Se si scorre più veloce della decodifica si
+vedono le fette che arrivano, e i dati a schermo dicono sempre quale fetta è
+mostrata; le misure si disegnano solo sulla fetta giusta. Mentre si scorre il
+ricampionamento è quello veloce, a scorrimento fermo quello di qualità. La
+rotella conta le tacche (una rotella libera che ne manda tre in un evento
+avanza di tre) e somma gli eventi piccoli di un trackpad. Su una postazione
+lenta simulata (decodifica a 60 ms, due alla volta): ritardo medio da 26 a 5,5
+fette, immagine giusta dopo l'ultimo scatto da 4,7 s a 0,2 s.
+
 Formati decodificati (`dicomDecode.js`), ognuno confrontato pixel per pixel con
 l'originale: non compressi (anche big endian e deflated), RLE, JPEG Lossless
 (`jpeg-lossless-decoder-js`), JPEG-LS (CharLS), JPEG 2000 (OpenJPEG), JPEG
