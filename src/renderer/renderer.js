@@ -13,6 +13,36 @@ function el(tag, className, text) {
 
 const DRIVE_LABEL = { 2: 'USB', 5: 'CD/DVD/ISO' };
 
+// Icone dei supporti, disegnate qui: una chiavetta per l'USB, un disco per
+// CD/DVD (le ISO montate Windows le presenta come unità ottiche).
+const DRIVE_ICON = {
+  2: [
+    ['rect', { x: 9, y: 2.5, width: 6, height: 5, rx: 0.8 }],
+    ['path', { d: 'M10.6 4.3h.01M13.4 4.3h.01' }],
+    ['rect', { x: 6.5, y: 7.5, width: 11, height: 14, rx: 2.2 }],
+    ['path', { d: 'M10 12.5h4' }],
+  ],
+  5: [
+    ['circle', { cx: 12, cy: 12, r: 9.5 }],
+    ['circle', { cx: 12, cy: 12, r: 2.6 }],
+    ['path', { d: 'M12 5.2a6.8 6.8 0 0 1 6.8 6.8' }],
+  ],
+};
+
+function driveIcon(type) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'drive-icon');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const [tag, attrs] of DRIVE_ICON[type] || DRIVE_ICON[2]) {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    svg.appendChild(n);
+  }
+  return svg;
+}
+
 // step della barra: 0 = Copia, 1 = Invio a PACS (o Archivio, in «Solo archivio»)
 const SP_STATUS = ['Copia in locale…', 'Invio a Synapse…'];
 
@@ -505,6 +535,7 @@ async function detect() {
   for (const d of state.drives) {
     const li = document.createElement('li');
     li.append(
+      driveIcon(d.driveType),
       el('span', 'tag', DRIVE_LABEL[d.driveType] || d.kind),
       el('b', null, d.caption),
       el('span', 'muted', d.volumeName || 'senza nome')

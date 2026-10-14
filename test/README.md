@@ -25,6 +25,7 @@ node_modules/electron/dist/electron.exe test/viewer-run.js scorciatoie
 |---|---|
 | `fantoccio.js` | studio sintetico con valori noti (vertebra 700 HU, diametro 34 mm; polmone circa −820 HU; nodulo 35 HU) e la sua copia compressa |
 | `importazione.js` | importazione dall'interfaccia con una chiavetta finta e `storescp` come PACS: copia, scelta (solo archivio / PACS), invio fallito, riuscito, parallelo, annullato, «Nuova importazione» |
+| `supporti.js` | elenco dei supporti al passo 1: icona della chiavetta per l'USB, del disco per CD/DVD/ISO |
 | `viewer-run.js <scena>` | apre il viewer su un archivio di prova ed esegue `scene/<scena>.js` |
 | `scene/strumenti.js` | strumenti che si spengono ripremendone la scorciatoia, cursore a manina |
 | `scene/scorciatoie.js` | le scorciatoie di Synapse, con eventi veri di tastiera e mouse |
