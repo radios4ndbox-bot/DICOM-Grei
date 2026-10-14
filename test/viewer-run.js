@@ -6,8 +6,8 @@
  *   node_modules/electron/dist/electron.exe test/viewer-run.js <scena>
  *     es. test/viewer-run.js strumenti
  *
- * L'archivio di prova (test/.dati/archivio-viewer) si ricostruisce ogni volta
- * da test/.dati/studio e studio2 (node test/fantoccio.js). Variabili:
+ * L'archivio di prova (archivio-viewer, nella cartella dei dati di prova) si ricostruisce ogni volta
+ * da studio e studio2 (node test/fantoccio.js, o rigenerati se mancano). Variabili:
  *   SLOW=60 SLOTS=2   decodifica rallentata di 60 ms, due alla volta (postazione lenta)
  */
 
@@ -16,7 +16,7 @@ const fs = require('fs');
 const path = require('path');
 
 const REPO = path.resolve(__dirname, '..');
-const { DATI } = require('./fantoccio');
+const { DATI, genera, comprimi } = require('./fantoccio');
 const config = require(REPO + '/src/main/config.js');
 config.ARCHIVE_DIR = path.join(DATI, process.env.ARCH || 'archivio-viewer');
 const archive = require(REPO + '/src/main/archive.js');
@@ -32,6 +32,11 @@ const check = (name, ok, extra) => {
 
 async function preparaArchivio() {
   if (process.env.ARCH) return; // archivio già pronto (prove di fluidità)
+  // i dati del fantoccio si rigenerano se mancano
+  if (!fs.existsSync(path.join(DATI, 'studio'))) {
+    genera(path.join(DATI, 'studio'));
+    comprimi(path.join(DATI, 'studio'), path.join(DATI, 'studio2'));
+  }
   fs.rmSync(config.ARCHIVE_DIR, { recursive: true, force: true });
   for (const [dir, reason] of [['studio2', 'non-indicizzato'], ['studio', 'invio-fallito']]) {
     const src = path.join(DATI, dir);
@@ -67,7 +72,13 @@ function rallenta() {
 }
 
 app.whenReady().then(async () => {
-  await preparaArchivio();
+  try {
+    await preparaArchivio();
+  } catch (e) {
+    // senza archivio la scena non ha senso: si esce subito, non dopo minuti di attesa
+    console.log('PREPARAZIONE FALLITA', e.stack || e);
+    return app.exit(1);
+  }
   rallenta();
   await wait(600);
   const w = viewerHost.open();

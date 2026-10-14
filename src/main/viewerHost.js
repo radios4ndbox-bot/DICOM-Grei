@@ -125,28 +125,35 @@ function open(examId) {
 }
 
 /**
- * Dove mettere una finestra di confronto.
+ * Dove mettere una finestra di confronto: la metà sinistra o destra di uno
+ * schermo, a scelta del medico (accanto al viewer del PACS).
  *
- * Con più schermi: su uno schermo diverso da quello della finestra di
- * partenza, a tutto schermo, preferendo quelli senza un'altra finestra di
- * confronto e, fra questi, il più vicino. Con uno schermo solo: la metà
- * destra dell'area di lavoro, così le due finestre si affiancano.
+ * Quale schermo: con più schermi, uno diverso da quello della finestra di
+ * partenza, preferendo quelli senza un'altra finestra di confronto e, fra
+ * questi, il più vicino; con uno schermo solo, quello.
+ *
+ * @param {'sinistra'|'destra'} side
  */
-function placeCompare(from) {
+function placeCompare(from, side = 'destra') {
   const displays = screen.getAllDisplays();
   const here = from && !from.isDestroyed() ? screen.getDisplayMatching(from.getBounds()) : screen.getPrimaryDisplay();
+  let target = here;
   const others = displays.filter((d) => d.id !== here.id);
-  if (!others.length) {
-    const a = here.workArea;
-    const half = Math.floor(a.width / 2);
-    return { bounds: { x: a.x + half, y: a.y, width: a.width - half, height: a.height }, maximize: false };
+  if (others.length) {
+    const taken = new Set(
+      [...compares].filter((w) => !w.isDestroyed()).map((w) => screen.getDisplayMatching(w.getBounds()).id)
+    );
+    const dist = (d) => Math.abs(d.bounds.x + d.bounds.width / 2 - (here.bounds.x + here.bounds.width / 2));
+    others.sort((p, q) => (taken.has(p.id) ? 1 : 0) - (taken.has(q.id) ? 1 : 0) || dist(p) - dist(q));
+    target = others[0];
   }
-  const taken = new Set(
-    [...compares].filter((w) => !w.isDestroyed()).map((w) => screen.getDisplayMatching(w.getBounds()).id)
-  );
-  const dist = (d) => Math.abs(d.bounds.x + d.bounds.width / 2 - (here.bounds.x + here.bounds.width / 2));
-  others.sort((p, q) => (taken.has(p.id) ? 1 : 0) - (taken.has(q.id) ? 1 : 0) || dist(p) - dist(q));
-  return { bounds: others[0].workArea, maximize: true };
+  const a = target.workArea;
+  const half = Math.floor(a.width / 2);
+  const bounds =
+    side === 'sinistra'
+      ? { x: a.x, y: a.y, width: half, height: a.height }
+      : { x: a.x + half, y: a.y, width: a.width - half, height: a.height };
+  return { bounds, maximize: false };
 }
 
 /**
@@ -154,7 +161,7 @@ function placeCompare(from) {
  * sull'immagine che si stava guardando. Ogni «Compara» ne apre una nuova.
  */
 function openCompare(from, target) {
-  const place = placeCompare(from);
+  const place = placeCompare(from, target && target.side);
   const w = createWindow({ ...place.bounds, title: 'DICOM Grei — Confronto' }, 'compare', target && target.id ? target : null);
   compares.add(w);
   w.once('ready-to-show', () => {
@@ -205,6 +212,7 @@ function register() {
       id: typeof r.id === 'string' && /^[0-9a-f-]{1,40}$/.test(r.id) ? r.id : null,
       key: typeof r.key === 'string' && /^s[0-9]{1,4}$/.test(r.key) ? r.key : null,
       idx: Number.isInteger(r.idx) && r.idx >= 0 ? r.idx : 0,
+      side: r.side === 'sinistra' ? 'sinistra' : 'destra',
     });
     return { ok: true };
   });

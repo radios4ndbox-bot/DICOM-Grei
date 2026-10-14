@@ -4,8 +4,8 @@
  * Studi DICOM sintetici per le prove. Nessun dato reale: un "paziente" di
  * prova con densità plausibili, così misure e finestre hanno valori attesi.
  *
- *   node test/fantoccio.js            -> test/.dati/studio   (62 file, 4 serie)
- *                                        test/.dati/studio2  (lo stesso, compresso, altro studio)
+ *   node test/fantoccio.js            -> <dati>/studio   (62 file, 4 serie)
+ *                                        <dati>/studio2  (lo stesso, compresso, altro studio)
  *
  * studio:  RX torace MONOCHROME1 (spaziatura sul rivelatore), TC assiale 40
  *          fette 256x256 12 bit con intercetta -1024, MPR coronale 16 bit con
@@ -23,7 +23,10 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const DATI = path.join(__dirname, '.dati');
+// Fuori da OneDrive (dove sta il repository): OneDrive tiene aperti un attimo i
+// file appena creati e le rinomine falliscono. E non nella cartella Temp, che
+// Windows svuota da sola.
+const DATI = process.env.DICOM_GREI_TEST || path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'DICOM Grei test');
 const ROOT = '1.2.826.0.1.3680043.2.1125.77';
 const DCMTK = process.env.DCMTK_BIN || path.join(os.homedir(), 'Downloads', 'dcmtk-3.7.0-win64-dynamic', 'bin');
 

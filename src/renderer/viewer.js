@@ -1170,9 +1170,31 @@
 
   // «Compara»: la stessa immagine in una seconda finestra, da mettere sullo
   // schermo accanto (di fianco al viewer del PACS, o a questo).
+  // Quale metà di schermo prende: la sceglie il medico, secondo dove sta il
+  // viewer del PACS, e resta scelta per le volte successive (solo per questa
+  // postazione e questo utente: è una comodità, non un dato).
+  let half = 'destra';
+  try {
+    if (localStorage.getItem('compara-meta') === 'sinistra') half = 'sinistra';
+  } catch {}
+  const showHalf = () => {
+    $('btn-half-l').classList.toggle('on', half === 'sinistra');
+    $('btn-half-r').classList.toggle('on', half === 'destra');
+  };
+  for (const b of [$('btn-half-l'), $('btn-half-r')]) {
+    b.addEventListener('click', () => {
+      half = b.dataset.side;
+      try {
+        localStorage.setItem('compara-meta', half);
+      } catch {}
+      showHalf();
+    });
+  }
+  showHalf();
+
   $('btn-compare').addEventListener('click', () => {
     const p = active();
-    api.compare(p.series ? { id: p.exam.id, key: p.series.key, idx: p.idx } : {});
+    api.compare({ ...(p.series ? { id: p.exam.id, key: p.series.key, idx: p.idx } : {}), side: half });
   });
   // nella finestra di confronto l'elenco a lato è chiuso: questo lo riapre
   $('btn-side').addEventListener('click', () => {

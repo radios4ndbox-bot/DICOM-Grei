@@ -144,6 +144,28 @@ async function purge(now = Date.now()) {
   return removed;
 }
 
+/**
+ * Rinomina una cartella riprovando per qualche secondo.
+ *
+ * Su Windows rinominare una cartella fallisce (EPERM, EBUSY, EACCES) finché
+ * qualcuno tiene aperto un file al suo interno: l'antivirus che esamina i file
+ * appena scritti, l'indicizzazione, OneDrive. Succede subito dopo averli
+ * creati, cioè proprio qui, e dura poco. Visto il 14/10/2026 con l'archivio
+ * dentro una cartella di OneDrive: l'esame restava .tmp e l'archiviazione
+ * falliva.
+ */
+async function renameRetry(from, to) {
+  const waits = [50, 100, 200, 300, 500, 750, 1000, 1500, 2000];
+  for (let i = 0; ; i++) {
+    try {
+      return await fs.promises.rename(from, to);
+    } catch (err) {
+      if (i >= waits.length || !['EPERM', 'EBUSY', 'EACCES'].includes(err && err.code)) throw err;
+      await new Promise((r) => setTimeout(r, waits[i]));
+    }
+  }
+}
+
 async function stagedFiles(partDirs) {
   const out = [];
   for (const d of partDirs) {
@@ -210,7 +232,7 @@ async function archiveStaging(opts) {
     if (!result.meta.imageCount) throw new Error('Nessuna immagine DICOM riconosciuta fra i file dello staging.');
 
     // L'esame compare tutto insieme: finché ha il nome .tmp l'elenco non lo vede.
-    await fs.promises.rename(tmp, dirOf(id));
+    await renameRetry(tmp, dirOf(id));
     tmp = null;
 
     // Lo stesso studio archiviato di nuovo (un secondo tentativo d'importazione):
@@ -239,6 +261,7 @@ module.exports = {
   remove,
   purge,
   archiveStaging,
+  renameRetry,
   onChange: (fn) => {
     listeners.add(fn);
     return () => listeners.delete(fn);

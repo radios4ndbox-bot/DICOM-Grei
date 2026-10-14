@@ -65,7 +65,10 @@ body {
 /* «Compara» è l'azione che porta fuori dalla finestra: si distingue dagli strumenti */
 #btn-compare { border-color: var(--teal); color: var(--teal-l); font-weight: 600; }
 #btn-compare:hover { background: #14343c; }
-body:not(.compare) #btn-compare { border-radius: 6px; } /* «Elenco» è nascosto: resta solo */
+/* le due metà: si accende quella scelta, a tinta piena come gli strumenti */
+.tools .half { padding: 0 9px; font-size: 15px; line-height: 1; }
+/* fuori dal confronto «Elenco» è nascosto: l'ultimo del gruppo è la metà destra */
+body:not(.compare) #btn-half-r { border-radius: 0 6px 6px 0; }
 
 /* Finestra di confronto: l'elenco a lato è chiuso finché non lo si chiede, e
    il pulsante che lo riapre esiste solo lì. */

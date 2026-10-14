@@ -2,7 +2,8 @@
 
 Prove dell'app vera, in Electron, su dati sintetici: nessun esame reale. Non
 entrano nell'installer (prende solo `src/`); i dati generati finiscono in
-`test/.dati`, ignorata da git.
+`%LOCALAPPDATA%\DICOM Grei test` (fuori da OneDrive, dove le rinomine falliscono, e fuori
+da Temp, che Windows svuota), oppure nella cartella indicata da `DICOM_GREI_TEST`.
 
 Servono Node, le dipendenze installate (`npm install`) e, per lo studio
 compresso e il PACS finto, DCMTK 3.7.0 win64: la cartella `bin` dello zip

@@ -375,7 +375,8 @@ async function splitStaging(dir, n) {
     await fs.promises.mkdir(d, { recursive: true });
     parts.push(d);
   }
-  await Promise.all(names.map((name, i) => fs.promises.rename(path.join(dir, name), path.join(parts[i % n], name))));
+  // file appena copiati: l'antivirus può tenerli aperti un attimo, si riprova
+  await Promise.all(names.map((name, i) => archive.renameRetry(path.join(dir, name), path.join(parts[i % n], name))));
   return parts.filter((_d, i) => i < names.length);
 }
 

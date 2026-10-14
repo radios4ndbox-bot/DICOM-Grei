@@ -7,7 +7,7 @@
  *   node test/fantoccio.js
  *   node_modules/electron/dist/electron.exe test/importazione.js
  *
- * Tutto avviene in test/.dati/importazione: staging, archivio, log,
+ * Tutto avviene in %LOCALAPPDATA%\DICOM Grei test\importazione: staging, archivio, log,
  * impostazioni. Niente tocca le cartelle vere della postazione.
  */
 

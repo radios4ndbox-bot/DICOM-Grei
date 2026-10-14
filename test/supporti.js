@@ -3,7 +3,7 @@
 /**
  * Elenco dei supporti al passo 1: icona e etichetta secondo il tipo.
  *   node_modules/electron/dist/electron.exe test/supporti.js
- * Lo scatto finisce in test/.dati/supporti.png.
+ * Lo scatto finisce in %LOCALAPPDATA%\DICOM Grei test\supporti.png.
  */
 
 const { app } = require('electron');
