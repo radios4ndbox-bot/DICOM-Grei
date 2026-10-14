@@ -56,7 +56,18 @@ l'avvio: viene ignorato e segnalato nel dialogo delle impostazioni e nel log.
 
 ## Flusso
 
-`RILEVA SUPPORTO → ANALIZZA STRUTTURA → CLASSIFICA (A–F) → COPIA IN LOCALE → INVIA`
+`RILEVA SUPPORTO → CLASSIFICA (A–G) → COPIA IN LOCALE → SCELTA: SOLO ARCHIVIO (20 GIORNI) OPPURE INVIO AL PACS`
+
+La destinazione si sceglie **a copia finita**, guardando l'anteprima: «Solo
+archivio · 20 giorni» oppure «Invia al PACS», con la modalità d'invio
+(sequenziale, parallelo, turbo) accanto. L'anteprima resta attiva fino alla
+scelta, anche quando la copia da una chiavetta dura un attimo. Il controllo
+di `storescu` si fa ancora prima di leggere il supporto, ma non blocca più la
+copia: se `storescu` non parte, «Invia al PACS» compare disattivato con il
+motivo e l'esame si può comunque conservare in archivio. Le parti per l'invio
+parallelo si creano dopo la scelta, spostando i file (stesso disco, nessuna
+copia). Il log è uno solo, dalla copia all'esito; «Nuova importazione» al
+posto della scelta chiude l'importazione come annullata.
 
 La cartella temporanea non si pulisce più a mano: **«Nuova importazione»** la
 svuota da sola (e smonta l'ISO, se c'era) prima di ripartire. Finché non la si
@@ -155,12 +166,9 @@ viewer interno, per **20 giorni** (`ARCHIVE_DAYS`).
 - a mano, con **«Conserva in archivio»** a fine importazione: per l'esame
   inviato senza errori ma che il medico ha verificato come non indicizzato dal
   PACS. Il pulsante c'è finché non si preme «Nuova importazione»;
-- per scelta, con **«Solo archivio · non invia al PACS»** nella tendina
-  dell'invio: l'esame si copia e resta solo sulla postazione, per guardarlo
-  ed eliminarlo. `storescu` non viene nemmeno controllato, quindi funziona
-  anche senza PACS configurato. Vale per quell'esame: alla «Nuova
-  importazione» la tendina torna sull'invio al PACS, perché l'esame dopo non
-  resti fuori senza che nessuno l'abbia deciso.
+- per scelta, con **«Solo archivio · 20 giorni»** a copia finita: l'esame
+  resta solo sulla postazione, per guardarlo ed eliminarlo. Funziona anche
+  senza PACS configurato o senza `storescu`.
 
 Un'importazione riuscita non lascia niente. Lo stesso studio archiviato due
 volte resta una volta sola, con la scadenza che riparte.

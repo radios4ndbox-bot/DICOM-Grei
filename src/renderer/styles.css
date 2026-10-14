@@ -190,7 +190,26 @@ main { padding: 0; min-width: 0; }
   font-size: 11px;
 }
 .viewer__zoom-bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.viewer__zoom-bar /* ---- archivio locale -------------------------------------------------- */
+.viewer__zoom-bar .icon-btn { width: 26px; height: 26px; font-size: 13px; }
+
+/* ---- scelta dopo la copia: solo archivio o PACS ------------------------ */
+.choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+  align-items: center;
+  justify-content: center;
+  margin: 18px 0 6px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.choice__opt { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.choice__opt button { padding: 10px 18px; font-size: 14px; }
+.choice__why { flex-basis: 100%; margin: 0; text-align: center; color: var(--err); font-size: 13px; }
+
+/* ---- archivio locale -------------------------------------------------- */
 .archive-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; font-size: 13px; }
 .archive-btn__n {
   min-width: 18px;
@@ -212,7 +231,6 @@ main { padding: 0; min-width: 0; }
 .archive-status--err { border-color: #f0c4be; background: #fdf3f2; color: var(--err); }
 .archive-status button { margin-left: 10px; padding: 4px 10px; font-size: 12px; }
 
-.icon-btn { width: 26px; height: 26px; font-size: 13px; }
 .viewer__zoom-stage {
   flex: 1;
   min-height: 0;

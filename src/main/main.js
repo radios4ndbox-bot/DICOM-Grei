@@ -56,6 +56,8 @@ const session = {
   // cartelle dello staging dell'ultima copia COMPLETA: quello che «Conserva in
   // archivio» può ancora salvare. Si azzera a ogni pulizia e a ogni nuova copia.
   staged: null,
+  // importazione copiata e in attesa della scelta (solo archivio o PACS): vedi 'run-copy'
+  job: null,
   preview: null,
   busy: false,
   preparing: false,
@@ -249,53 +251,31 @@ function startPreviewChannel() {
   }
 }
 
-ipcMain.handle('run-import', async (_e, opts) => {
-  if (!session.plan) throw new Error('Nessuna classificazione disponibile.');
-  if (session.busy) throw new Error('Importazione già in corso.');
-  session.staged = null; // la copia che parte sostituisce lo staging precedente
+/*
+ * L'importazione in due tempi.
+ *
+ *   1. 'run-copy'  il supporto si copia in locale (staging), con l'anteprima.
+ *   2. il medico sceglie, guardando l'anteprima, dove va l'esame:
+ *      'run-send' { mode: 'archive' }                    solo archivio, 20 giorni
+ *      'run-send' { mode: 'single' | 'normal' | 'turbo' } al PACS
+ *
+ * Fra i due tempi l'importazione resta aperta in session.job: il log è uno
+ * solo, dalla copia all'esito. «Nuova importazione» senza scegliere la chiude
+ * come annullata (vedi abandonJob).
+ */
 
-  // Dal renderer prendiamo SOLO l'eventuale tipo forzato dalla tendina.
-  // dataRoot/subfolders restano quelli calcolati qui: il renderer non può
-  // far leggere a stageFiles una cartella qualsiasi del PC.
-  const forced = opts && typeof opts.type === 'string' ? opts.type : '';
-  const ov = TYPE_OVERRIDE[forced];
-  const plan = ov ? { ...session.plan, type: forced, ...ov } : session.plan;
+const DESTINATION_MODES = ['archive', 'single', 'normal', 'turbo'];
 
-  // Prima di copiare: se storescu manca lo si deve sapere ORA, non dopo
-  // minuti di lettura del CD (nel report sul campo la copia da sola arriva a 7
-  // minuti). Stesso discorso per un pattern non ammesso.
-  // «Solo archivio»: l'esame si copia e resta sulla postazione, senza passare
-  // dal PACS. storescu non serve, quindi non lo si controlla nemmeno: deve
-  // funzionare anche su una postazione senza PACS configurato.
-  const archiveOnly = !!(opts && opts.mode === 'archive');
-  if (!archiveOnly) preflightSend(plan.pattern);
-
-  const iso = (session.prepared && session.prepared.iso) || null;
-
-  // Quante associazioni DICOM in parallelo.
-  //
-  // 'single' ne usa UNA sola: lo staging non viene spezzato in part_NN e parte
-  // un solo storescu con "+sd <staging>", cioè esattamente il comando del
-  // report sul campo, quello che da cmd non perde un'associazione. È il
-  // default. 'normal'/'turbo' aprono più associazioni: più veloci SE il PACS
-  // le accetta tutte, ma oltre il suo limite per AE title le richieste in più
-  // vengono rifiutate.
-  const mode = opts && typeof opts.mode === 'string' ? opts.mode : 'single';
-  const workers =
-    mode === 'turbo' ? config.WORKERS_TURBO : mode === 'normal' ? config.WORKERS_NORMAL : 1;
-  const turbo = mode === 'turbo';
-
-  // Log su file (Desktop), scritto mentre si procede. Ogni riga che va nella
-  // finestra va anche lì; la finestra ne tiene 400, il file tutte.
+/** Apre il log e scrive l'intestazione dell'importazione. */
+function openJob(plan, ov, iso) {
   const log = openImportLog();
   const ch = uiChannel();
-  const emitProgress = ch.progress;
   const emitLog = (line) => {
     ch.log(line);
     log.line(line);
   };
+  const timing = { copySec: null, sendSec: null, totalSec: null, copyBytes: 0, sendBytes: 0 };
 
-  const startedAt = Date.now();
   const kind = session.prepared ? session.prepared.kind : '';
   log.section('IMPORTAZIONE');
   log.line(`DICOM Grei ${app.getVersion()} · ${new Date().toLocaleString('it-IT')}`);
@@ -317,28 +297,14 @@ ipcMain.handle('run-import', async (_e, opts) => {
     log.line(`Impostazioni: ${origin}`);
     for (const w of d.warnings) log.line(`ATTENZIONE: ${w}`);
   }
-  if (archiveOnly) {
-    log.line('Invio: NESSUNO, solo archivio locale');
-  } else {
-    log.line(
-      `Invio: ${mode === 'single' ? 'sequenziale' : mode} · ` +
-        `${workers} ${workers === 1 ? 'associazione' : 'associazioni'}`
-    );
-    log.line(`storescu: ${config.STORESCU}`);
-  }
   if (log.path) emitLog(`> log dell'importazione: ${log.path}`);
 
-  // `busy` copre TUTTA l'importazione, copia compresa. `session.send` da solo
-  // non basta: viene valorizzato solo dopo lo staging, e la copia di migliaia
-  // di file da un DVD dura minuti, durante i quali la pulizia giornaliera
-  // avrebbe potuto svuotare lo staging sotto i piedi della copia stessa.
-  session.busy = true;
-  const preview = startPreviewChannel();
-  session.preview = preview;
+  const job = { log, ch, emitLog, emitProgress: ch.progress, timing, plan, iso, copy: null };
 
-  const timing = { copySec: null, sendSec: null, totalSec: null, copyBytes: 0, sendBytes: 0 };
-  const finish = (result) => {
-    timing.totalSec = Math.round((Date.now() - startedAt) / 100) / 10;
+  job.finish = (result) => {
+    // la durata è quella del lavoro, copia più invio: il tempo passato a
+    // guardare l'anteprima prima di scegliere non è lentezza dell'app
+    timing.totalSec = Math.round(((timing.copySec || 0) + (timing.sendSec || 0)) * 10) / 10;
     log.section('RIEPILOGO');
     log.line(`Copia   ${formatDuration(timing.copySec)} · ${formatBytes(timing.copyBytes)} · ${mbps(timing.copyBytes, timing.copySec)}`);
     if (timing.sendSec != null) {
@@ -350,10 +316,10 @@ ipcMain.handle('run-import', async (_e, opts) => {
       refused: ', ritentativi interrotti (il PACS rifiuta i file)',
       silent: ', ritentativi interrotti (nessuna risposta riconoscibile)',
     };
-    if (result.interrupted && result.stagingKept) log.line('Esito: INVIO INTERROTTO, file lasciati in staging');
+    if (result.abandoned) log.line('Esito: ANNULLATA dopo la copia, niente inviato né archiviato');
+    else if (result.interrupted && result.stagingKept) log.line('Esito: INVIO INTERROTTO, file lasciati in staging');
     else if (result.interrupted) log.line('Esito: INTERROTTA, staging azzerato');
     else if (result.error) log.line('Esito: ERRORE — ' + result.error);
-    else if (result.archiveOnly) log.line('Esito: solo archivio, niente inviato al PACS');
     else if (result.archiveOnly) log.line('Esito: solo archivio, niente inviato al PACS');
     if (result.send && !result.error) {
       const s = result.send;
@@ -375,18 +341,92 @@ ipcMain.handle('run-import', async (_e, opts) => {
     }
     return { ...result, timing, logPath: log.path };
   };
+  return job;
+}
+
+/** Chiude l'importazione rimasta in attesa della scelta. Non lancia mai. */
+function stopPreview() {
+  if (session.preview) session.preview.kill();
+  session.preview = null;
+}
+
+async function abandonJob() {
+  const job = session.job;
+  if (!job) return;
+  session.job = null;
+  stopPreview();
+  try {
+    job.finish({ copy: job.copy, abandoned: true });
+    job.ch.flush();
+    await job.log.close();
+  } catch {}
+}
+
+/**
+ * Divide lo staging in N sottocartelle part_NN, una per associazione.
+ * La copia avviene sempre in una cartella sola, perché la modalità d'invio si
+ * sceglie dopo: qui i file si spostano (stesso disco, nessun byte copiato).
+ */
+async function splitStaging(dir, n) {
+  const names = (await fs.promises.readdir(dir, { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name).sort();
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    const d = path.join(dir, config.PART_PREFIX + String(i + 1).padStart(2, '0'));
+    await fs.promises.mkdir(d, { recursive: true });
+    parts.push(d);
+  }
+  await Promise.all(names.map((name, i) => fs.promises.rename(path.join(dir, name), path.join(parts[i % n], name))));
+  return parts.filter((_d, i) => i < names.length);
+}
+
+// ---- 1. copia in locale ------------------------------------------------------
+ipcMain.handle('run-copy', async (_e, opts) => {
+  if (!session.plan) throw new Error('Nessuna classificazione disponibile.');
+  if (session.busy) throw new Error('Importazione già in corso.');
+  await abandonJob(); // una copia rimasta senza scelta non resta aperta
+  session.staged = null; // la copia che parte sostituisce lo staging precedente
+
+  // Dal renderer prendiamo SOLO l'eventuale tipo forzato dalla tendina.
+  // dataRoot/subfolders restano quelli calcolati qui: il renderer non può
+  // far leggere a stageFiles una cartella qualsiasi del PC.
+  const forced = opts && typeof opts.type === 'string' ? opts.type : '';
+  const ov = TYPE_OVERRIDE[forced];
+  const plan = ov ? { ...session.plan, type: forced, ...ov } : session.plan;
+  const iso = (session.prepared && session.prepared.iso) || null;
+
+  const job = openJob(plan, ov, iso);
+  const { log, emitLog, emitProgress, timing } = job;
+
+  // storescu si controlla PRIMA di leggere il supporto, come prima, ma non
+  // ferma più la copia: senza storescu l'esame si può comunque conservare in
+  // archivio. Il pulsante «Invia al PACS» lo dice.
+  let sendCheck = { ok: true };
+  try {
+    preflightSend(plan.pattern);
+  } catch (err) {
+    sendCheck = { ok: false, error: String((err && err.message) || err) };
+    log.line('ATTENZIONE: invio al PACS non disponibile — ' + sendCheck.error);
+  }
+  log.line('Destinazione: da scegliere dopo la copia');
+
+  // `busy` copre la copia. Fra copia e scelta lo staging è protetto da
+  // session.job (la pulizia giornaliera non lo tocca).
+  session.busy = true;
+  const preview = startPreviewChannel();
+  session.preview = preview;
+  let pending = false;
 
   try {
     // Da lettore ottico le letture parallele fanno solo saltare la testina: lì
-    // poche copie contemporanee. Da USB, ZIP estratto o ISO (file su disco
-    // locale) molte di più.
+    // poche copie contemporanee. Da USB, ZIP estratto o ISO molte di più.
     const optical = !!(session.prepared && session.prepared.kind === 'optical' && !session.prepared.iso);
     const concurrency = optical ? config.COPY_CONCURRENCY_OPTICAL : config.COPY_CONCURRENCY_FAST;
     session.cancelRequested = false;
 
     log.section('COPIA IN LOCALE');
     log.line(`${concurrency} letture contemporanee · timeout ${config.FILE_COPY_TIMEOUT_MS / 1000} s per file`);
-    const copy = await stageFiles(plan, emitProgress, workers, {
+    // una cartella sola: le parti per l'invio parallelo si fanno dopo la scelta
+    const copy = await stageFiles(plan, emitProgress, 1, {
       concurrency,
       isCancelled: () => session.cancelRequested,
       files: session.files,
@@ -394,6 +434,7 @@ ipcMain.handle('run-import', async (_e, opts) => {
       onStaged: preview ? (dest) => preview.file(dest) : null,
       onLog: emitLog,
     });
+    job.copy = copy;
     timing.copySec = copy.elapsedSec;
     timing.copyBytes = copy.bytes;
     log.line(
@@ -405,44 +446,99 @@ ipcMain.handle('run-import', async (_e, opts) => {
     // chiamarsi come il paziente
     for (const f of copy.skippedFiles.slice(0, 200)) log.line(`  non copiato: ${path.basename(f)}`);
 
-    // Interruzione arrivata durante la copia (o fra copia e invio)
     if (copy.cancelled || session.cancelRequested) {
       if (preview) preview.kill();
       const reset = await cleanup({});
-      return finish({ copy, send: null, iso, interrupted: true, reset });
+      return job.finish({ copy, send: null, iso, interrupted: true, reset });
     }
-
-    // L'anteprima si ferma qui, prima dell'invio: legge l'intestazione di ogni
-    // file dello staging, cioè dalla stessa cartella e dallo stesso disco da
-    // cui storescu sta per leggere, e ogni apertura passa per l'antivirus.
-    // Misurato: 3000 intestazioni lette anche con soli 3 riquadri prodotti.
-    // I riquadri già comparsi durante la copia restano visibili; si smette
-    // soltanto di aggiungerne, perché l'invio ha la priorità.
-    if (preview) preview.kill();
-
     if (copy.copied === 0) {
-      return finish({ copy, send: null, iso, error: 'Nessun file copiato in staging: invio annullato.' });
+      return job.finish({ copy, send: null, iso, error: 'Nessun file copiato.' });
     }
+
+    // L'anteprima NON si ferma qui: è proprio guardandola che il medico
+    // sceglie. Riceve gli ultimi file e completa i riquadri; si ferma alla
+    // scelta (run-send), perché da lì archivio e invio leggono la stessa
+    // cartella. Da una chiavetta la copia dura un attimo, e fermarla qui
+    // lasciava il mosaico vuoto proprio al momento di decidere.
+    if (preview) preview.end().catch(() => {});
 
     session.staged = { partDirs: copy.partDirs };
+    session.job = job;
+    pending = true;
+    return {
+      stage: 'copied',
+      sendCheck,
+      copy: {
+        copied: copy.copied,
+        total: copy.total,
+        skipped: copy.skipped,
+        recovered: copy.recovered,
+        driveStuck: copy.driveStuck,
+        bytes: copy.bytes,
+        elapsedSec: copy.elapsedSec,
+      },
+    };
+  } catch (err) {
+    log.line('ERRORE: ' + String((err && err.message) || err));
+    job.finish({ error: String((err && err.message) || err) });
+    throw err;
+  } finally {
+    job.ch.flush();
+    if (!pending) {
+      if (preview) preview.kill();
+      session.preview = null;
+    }
+    session.busy = false;
+    session.cancelRequested = false;
+    if (!pending) await log.close();
+  }
+});
 
-    if (archiveOnly) {
+// ---- 2. destinazione: solo archivio, oppure PACS --------------------------------
+ipcMain.handle('run-send', async (_e, opts) => {
+  if (session.busy) throw new Error('Importazione già in corso.');
+  const job = session.job;
+  if (!job || !session.staged) throw new Error('Nessuna copia in attesa: rifare l\'importazione.');
+  const mode = opts && DESTINATION_MODES.includes(opts.mode) ? opts.mode : 'single';
+  session.job = null;
+  session.busy = true;
+  stopPreview(); // scelta fatta: l'anteprima smette di leggere lo staging
+  const { log, emitLog, emitProgress, timing, plan, iso, copy } = job;
+
+  try {
+    if (mode === 'archive') {
       log.section('ARCHIVIO');
+      log.line('Destinazione: solo archivio locale, niente al PACS');
       const archived = await archiveStaged('solo-archivio', emitLog);
       // se l'archivio non è scrivibile lo staging resta: «Conserva in archivio» può riprovare
-      return finish({ copy, send: null, iso, archiveOnly: true, archived, archivable: !(archived && archived.id) });
+      return job.finish({ copy, send: null, iso, archiveOnly: true, archived, archivable: !(archived && archived.id) });
     }
 
+    // Quante associazioni DICOM in parallelo. 'single' ne usa UNA sola, con
+    // un solo storescu "+sd <staging>": il comando del report sul campo, che
+    // da cmd non perde un'associazione. È il default. 'normal'/'turbo' ne
+    // aprono di più: più veloci SE il PACS le accetta tutte.
+    const workers = mode === 'turbo' ? config.WORKERS_TURBO : mode === 'normal' ? config.WORKERS_NORMAL : 1;
+    const turbo = mode === 'turbo';
     log.section('INVIO A PACS');
-    const pending = sendStoreScu(
-      { pattern: plan.pattern, partDirs: copy.partDirs, totalFiles: copy.copied },
-      (ev) => {
-        if (ev.type === 'log') emitLog(ev.line);
-        else if (ev.type === 'progress') emitProgress(ev.data);
-      }
+    log.line(
+      `Destinazione: PACS · invio ${mode === 'single' ? 'sequenziale' : mode} · ` +
+        `${workers} ${workers === 1 ? 'associazione' : 'associazioni'}`
     );
-    session.send = pending;
+    log.line(`storescu: ${config.STORESCU}`);
+    preflightSend(plan.pattern);
 
+    let partDirs = session.staged.partDirs;
+    if (workers > 1 && partDirs.length === 1) {
+      partDirs = await splitStaging(partDirs[0], workers);
+      session.staged = { partDirs };
+    }
+
+    const pending = sendStoreScu({ pattern: plan.pattern, partDirs, totalFiles: copy.copied }, (ev) => {
+      if (ev.type === 'log') emitLog(ev.line);
+      else if (ev.type === 'progress') emitProgress(ev.data);
+    });
+    session.send = pending;
     let send;
     try {
       send = await pending;
@@ -452,35 +548,27 @@ ipcMain.handle('run-import', async (_e, opts) => {
     timing.sendSec = send.elapsedSec;
     timing.sendBytes = send.bytes || 0;
 
-    // Invio interrotto dall'operatore. La copia era finita, quindi lo staging
-    // è completo e si lascia com'è: «Copia comando» deve poter rilanciare da
-    // cmd lo stesso invio sugli stessi file, ed è proprio dopo un invio andato
-    // male che serve. Prima qui si azzerava, e la riga copiata non trovava più
-    // niente (30/09/2026). Lo toglie «Pulisci», la prossima importazione o la
-    // pulizia giornaliera. L'ISO resta montata, come prima.
+    // Invio interrotto dall'operatore: lo staging è completo e resta, per
+    // «Copia comando» e «Conserva in archivio». Lo toglie «Nuova importazione».
     if (send.cancelled) {
-      return finish({ copy, send, iso, interrupted: true, stagingKept: true, archivable: true });
+      return job.finish({ copy, send, iso, interrupted: true, stagingKept: true, archivable: true });
     }
 
     // Invio non riuscito, del tutto o in parte: l'esame non è (tutto) nel PACS
     // e il supporto può non essere più a portata di mano. Resta consultabile
-    // nell'archivio locale. Si conserva l'esame intero, non solo i file
-    // falliti: uno studio a metà non si legge.
+    // nell'archivio locale, intero: uno studio a metà non si legge.
     const sendFailed = send.failed > 0 || send.success === 0;
     const archived = sendFailed ? await archiveStaged('invio-fallito', emitLog) : null;
-
-    return finish({ copy, send, iso, workers, turbo, mode, archived, archivable: true });
+    return job.finish({ copy, send, iso, workers, turbo, mode, archived, archivable: true });
   } catch (err) {
     log.line('ERRORE: ' + String((err && err.message) || err));
     // errore dopo una copia completa (storescu che non parte, rete giù): anche
     // questo è un invio non riuscito
     const archived = session.staged ? await archiveStaged('invio-fallito', emitLog) : null;
-    finish({ error: String((err && err.message) || err), archived });
+    job.finish({ error: String((err && err.message) || err), archived });
     throw err;
   } finally {
-    ch.flush();
-    if (preview) preview.kill();
-    session.preview = null;
+    job.ch.flush();
     session.busy = false;
     session.send = null;
     session.cancelRequested = false;
@@ -543,7 +631,7 @@ ipcMain.handle('copy-command', () => {
 });
 
 // Interruzione dell'invio in corso. Il chiamante riceve comunque il risultato
-// da 'run-import', con interrupted:true: durante la copia lo staging viene
+// da 'run-copy' o 'run-send', con interrupted:true: durante la copia lo staging viene
 // ripulito, durante l'invio resta (stagingKept) per «Copia comando».
 ipcMain.handle('stop-import', () => {
   if (!session.busy) return { stopped: false };
@@ -590,6 +678,7 @@ function refreshPacsBadge() {
 ipcMain.handle('cleanup', async () => {
   // rm ricorsivo sullo staging: non deve poter partire mentre lo si sta usando
   if (session.busy) throw new Error('Importazione in corso: interromperla prima di pulire.');
+  await abandonJob(); // «Nuova importazione» senza aver scelto: annullata, e il log lo dice
   // L'ISO da smontare è quella montata da noi in questa sessione, non una
   // qualsiasi indicata dal renderer.
   const iso = (session.prepared && session.prepared.iso) || null;
@@ -639,7 +728,8 @@ app.whenReady().then(() => {
   // due volte insieme: `purging` chiude la finestra fra il controllo di `busy`
   // e la rimozione vera e propria.
   const purgeIfIdle = () => {
-    if (session.busy || session.purging) return;
+    // né durante un'importazione né mentre una copia aspetta la scelta del medico
+    if (session.busy || session.purging || session.job) return;
     session.purging = true;
     dailyPurge(false)
       .then((r) => {
@@ -668,6 +758,7 @@ app.whenReady().then(() => {
 // Chiudere la finestra non deve lasciare in giro processi storescu che
 // continuano a scrivere sul PACS, né worker thread appesi.
 app.on('before-quit', () => {
+  abandonJob();
   session.cancelRequested = true;
   if (session.preview) session.preview.kill();
   if (session.send) session.send.cancel();

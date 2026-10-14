@@ -596,9 +596,7 @@ const SEND_MODE_NOTE = {
 };
 
 function updateSendModeNote() {
-  const mode = $('send-mode').value;
-  $('send-mode-note').textContent = SEND_MODE_NOTE[mode] || '';
-  $('btn-start').textContent = mode === 'archive' ? 'Importa in archivio' : 'Avvia importazione';
+  $('send-mode-note').textContent = SEND_MODE_NOTE[$('send-mode').value] || '';
 }
 $('send-mode').addEventListener('change', updateSendModeNote);
 updateSendModeNote();
@@ -608,13 +606,16 @@ $('btn-start').addEventListener('click', startImport);
 
 // ---------------------------------------------------------------- STEP 3 — barra unica
 
+/* L'importazione in due tempi: prima la copia in locale (startImport), poi,
+   guardando l'anteprima, la scelta fra «Solo archivio» e «Invia al PACS»
+   (chooseDestination). */
 async function startImport() {
   state.finished = false;
 
-  const archiveOnly = $('send-mode').value === 'archive';
-  $('sp-label-2').textContent = archiveOnly ? 'Archivio' : 'Invio a PACS';
-  // i contatori dell'invio non hanno senso se al PACS non va niente
-  $('send-ok').hidden = $('send-err').hidden = archiveOnly;
+  // la destinazione si sceglie a copia finita
+  $('sp-label-2').textContent = 'Destinazione';
+  $('send-ok').hidden = $('send-err').hidden = true;
+  $('choice').classList.add('hidden');
 
   resetLog();
   $('summary').classList.add('hidden');
@@ -632,20 +633,71 @@ async function startImport() {
 
   let result;
   try {
-    result = await window.api.runImport($('override').value, $('send-mode').value);
+    result = await window.api.runCopy($('override').value);
   } catch (err) {
-    $('btn-stop').classList.add('hidden');
-    appendLog(['', 'ERRORE: ' + err.message]);
-    $('phase-label').textContent = 'Errore durante il trasferimento';
-    $('phase-eta').textContent = '';
-    $('sum-note').textContent = err.message;
-    $('summary').classList.remove('hidden');
-    // lo staging può essere rimasto sporco: lo svuota «Nuova importazione»
-    $('btn-restart').classList.remove('hidden');
-    return;
+    return showImportError(err);
+  }
+  if (result && result.stage === 'copied') showChoice(result);
+  else onImportDone(result); // copia interrotta o senza file: finisce qui
+}
+
+function showImportError(err) {
+  $('btn-stop').classList.add('hidden');
+  $('choice').classList.add('hidden');
+  appendLog(['', 'ERRORE: ' + err.message]);
+  $('phase-label').textContent = 'Errore durante il trasferimento';
+  $('phase-eta').textContent = '';
+  $('sum-note').textContent = err.message;
+  $('summary').classList.remove('hidden');
+  // lo staging può essere rimasto sporco: lo svuota «Nuova importazione»
+  $('btn-restart').classList.remove('hidden');
+}
+
+/** Copia finita: l'anteprima è a destra, il medico sceglie dove va l'esame. */
+function showChoice(r) {
+  const c = r.copy;
+  $('btn-stop').classList.add('hidden');
+  setProgress(0, 1, {
+    status: 'Copia completata',
+    detail: `${c.copied} file · ${formatMB(c.bytes)}` + (c.skipped ? ` · ${c.skipped} non copiati` : ''),
+    eta: '',
+  });
+  // senza storescu l'esame si può comunque conservare: si dice perché il PACS no
+  const ok = !r.sendCheck || r.sendCheck.ok;
+  $('btn-choice-pacs').disabled = !ok;
+  $('send-mode').disabled = !ok;
+  $('choice-why').textContent = ok ? '' : 'Invio al PACS non disponibile: ' + r.sendCheck.error;
+  $('choice-why').classList.toggle('hidden', ok);
+  $('choice').classList.remove('hidden');
+  // «Nuova importazione» qui vale come annulla: niente inviato né archiviato
+  $('btn-restart').classList.remove('hidden');
+}
+
+async function chooseDestination(mode) {
+  const archive = mode === 'archive';
+  $('choice').classList.add('hidden');
+  $('btn-restart').classList.add('hidden');
+  $('sp-label-2').textContent = archive ? 'Archivio' : 'Invio a PACS';
+  // i contatori dell'invio non hanno senso se al PACS non va niente
+  $('send-ok').hidden = $('send-err').hidden = archive;
+  if (archive) {
+    setProgress(1, 0.5, { status: 'Archiviazione…', detail: '', eta: '' });
+  } else {
+    setProgress(1, 0, { status: SP_STATUS[1], detail: '', eta: '' });
+    $('btn-stop').classList.remove('hidden');
+    $('btn-stop').disabled = false;
+  }
+  let result;
+  try {
+    result = await window.api.runSend(mode);
+  } catch (err) {
+    return showImportError(err);
   }
   onImportDone(result);
 }
+
+$('btn-choice-archive').addEventListener('click', () => chooseDestination('archive'));
+$('btn-choice-pacs').addEventListener('click', () => chooseDestination($('send-mode').value));
 
 $('btn-stop').addEventListener('click', async () => {
   if (
@@ -907,9 +959,9 @@ $('btn-restart').addEventListener('click', async () => {
   }
   $('btn-restart').disabled = false;
   $('btn-restart').classList.add('hidden');
-  // «Solo archivio» vale per l'esame per cui è stato scelto: il successivo
-  // torna all'invio al PACS, altrimenti resterebbe fuori senza che nessuno
-  // l'abbia deciso
+  $('choice').classList.add('hidden');
+  // la modalità d'invio torna alla predefinita, quella che da cmd non perde
+  // un'associazione: parallelo e turbo sono una scelta per quell'esame
   $('send-mode').value = 'single';
   updateSendModeNote();
   previewReset();

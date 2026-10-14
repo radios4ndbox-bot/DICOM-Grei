@@ -195,21 +195,9 @@
           <option value="D">D · annidamento profondo</option>
         </select>
       </div>
-      <div class="row">
-        <label for="send-mode">Invio</label>
-        <select id="send-mode">
-          <option value="single" selected>Sequenziale · una sola associazione (come da CMD)</option>
-          <option value="normal">Parallelo · poche associazioni insieme</option>
-          <option value="turbo">Turbo · molte associazioni insieme</option>
-          <option value="archive">Solo archivio · non invia al PACS</option>
-        </select>
-      </div>
-      <div class="row">
-        <span class="muted" id="send-mode-note"></span>
-      </div>
       <div class="row between">
         <button id="btn-back-media" class="ghost">Indietro</button>
-        <button id="btn-start" class="primary">Avvia importazione</button>
+        <button id="btn-start" class="primary">Copia in locale</button>
       </div>
     </section>
 
@@ -239,6 +227,23 @@
         <p class="status" id="phase-label">Preparazione…</p>
         <p class="muted mono" id="phase-detail"></p>
         <p class="eta" id="phase-eta"></p>
+      </div>
+
+      <!-- Copia finita: il medico sceglie dove va l'esame, guardando l'anteprima -->
+      <div class="choice hidden" id="choice">
+        <div class="choice__opt">
+          <button id="btn-choice-archive" class="ghost">Solo archivio · 20 giorni</button>
+        </div>
+        <div class="choice__opt">
+          <button id="btn-choice-pacs" class="primary">Invia al PACS</button>
+          <select id="send-mode" aria-label="Modalità d'invio">
+            <option value="single" selected>Sequenziale · una sola associazione (come da CMD)</option>
+            <option value="normal">Parallelo · poche associazioni insieme</option>
+            <option value="turbo">Turbo · molte associazioni insieme</option>
+          </select>
+          <span class="muted" id="send-mode-note"></span>
+        </div>
+        <p class="choice__why hidden" id="choice-why"></p>
       </div>
 
       <div class="row">

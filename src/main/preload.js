@@ -14,10 +14,11 @@ contextBridge.exposeInMainWorld('api', {
   // Il main tiene lo stato autorevole (sorgente preparata, piano di
   // classificazione). Qui passano solo scelte dell'utente, mai percorsi.
   classify: () => ipcRenderer.invoke('classify'),
-  // mode: 'single' (una sola associazione, come da cmd) | 'normal' | 'turbo'
-  //       | 'archive' (niente PACS: l'esame resta solo nell'archivio locale)
-  //       | 'archive' (niente PACS: l'esame resta solo nell'archivio locale)
-  runImport: (type, mode) => ipcRenderer.invoke('run-import', { type: type || '', mode: mode || 'single' }),
+  // Importazione in due tempi: prima la copia in locale, poi la scelta.
+  runCopy: (type) => ipcRenderer.invoke('run-copy', { type: type || '' }),
+  // mode: 'archive' (solo archivio, 20 giorni) | 'single' (PACS, una sola
+  // associazione, come da cmd) | 'normal' | 'turbo'
+  runSend: (mode) => ipcRenderer.invoke('run-send', { mode: mode || 'single' }),
   // riga di comando dell'ultimo invio, negli appunti: serve a rilanciarla identica da cmd
   copyCommand: () => ipcRenderer.invoke('copy-command'),
   stopImport: () => ipcRenderer.invoke('stop-import'),
