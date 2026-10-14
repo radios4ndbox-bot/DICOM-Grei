@@ -165,10 +165,12 @@ body.compare.show-side .side { display: flex; }
 .panel { position: relative; background: #000; min-width: 0; min-height: 0; overflow: hidden; outline: 1px solid transparent; outline-offset: -1px; }
 .views[data-layout="2"] .panel.active { outline-color: var(--teal); }
 .panel canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-.panel[data-tool="scroll"] canvas { cursor: ns-resize; }
+/* scorrimento, la modalità di base: la manina, che si chiude mentre si trascina */
+.panel[data-tool="scroll"] canvas { cursor: grab; }
+.panel[data-tool="scroll"] canvas.trascina { cursor: grabbing; }
 .panel[data-tool="wl"] canvas { cursor: crosshair; }
 .panel[data-tool="zoom"] canvas { cursor: zoom-in; }
-.panel[data-tool="pan"] canvas { cursor: grab; }
+.panel[data-tool="pan"] canvas { cursor: move; }
 .panel[data-tool="dist"] canvas, .panel[data-tool="angle"] canvas, .panel[data-tool="roi"] canvas,
 .panel[data-tool="probe"] canvas { cursor: crosshair; }
 

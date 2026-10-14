@@ -947,7 +947,7 @@
         anchor: toImage(p, pos.x, pos.y),
         w: p.frame.samples === 1 ? { ...windowOf(p) } : null,
       };
-      if (mode === 'pan') c.style.cursor = 'grabbing';
+      if (mode === 'scroll') c.classList.add('trascina');
       if (mode === 'probe') renderSoon(p); // il valore compare al clic, senza aspettare un movimento
     });
 
@@ -1016,7 +1016,7 @@
       }
       drag = null;
       p.probe = null;
-      c.style.cursor = '';
+      c.classList.remove('trascina');
       renderSoon(p);
     };
     c.addEventListener('pointerup', end);
@@ -1104,7 +1104,10 @@
     syncToolbar();
   }
 
-  document.querySelectorAll('.tools [data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
+  // ricliccare lo strumento attivo lo spegne: si torna allo scorrimento
+  document.querySelectorAll('.tools [data-tool]').forEach((b) =>
+    b.addEventListener('click', () => setTool(state.tool === b.dataset.tool ? 'scroll' : b.dataset.tool))
+  );
 
   $('preset').addEventListener('change', () => {
     const p = active();
@@ -1295,7 +1298,8 @@
       if (e.repeat) return;
       momentary = { key: low, previous: state.tool };
       momentaryUsed = false;
-      return void setTool(KEY_TOOLS[low]);
+      // ripremere il tasto dello strumento attivo lo spegne: si torna allo scorrimento
+      return void setTool(state.tool === KEY_TOOLS[low] ? 'scroll' : KEY_TOOLS[low]);
     }
     if (low === 's') return void (state.layout === 2 && setSync(!state.sync)); // scorrimento collegato sì/no
     if (low === 'j') return void (state.layout === 2 && setSync(true));       // collega le serie con lo stesso orientamento
