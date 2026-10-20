@@ -20,7 +20,7 @@ app.whenReady().then(() => {
   screen.getPrimaryDisplay = () => displays[0];
   screen.getDisplayMatching = (b) => displays.slice().sort((p, q) => Math.abs(p.bounds.x - b.x) - Math.abs(q.bounds.x - b.x))[0];
   const win = (x) => ({ isDestroyed: () => false, getBounds: () => ({ x: x + 100, y: 50, width: 1200, height: 800 }) });
-  const at = (p) => `x=${p.bounds.x} largo ${p.bounds.width}`;
+  const at = (p) => `x=${p.bounds.x} largo ${p.bounds.width}${p.maximize ? ' · intero' : ''}`;
 
   displays = [D(1, 0, 2560, 1440)];
   let p = viewerHost.placeCompare(win(0), 'destra');
@@ -30,18 +30,26 @@ app.whenReady().then(() => {
   p = viewerHost.placeCompare(win(0));
   check('senza scelta: destra', p.bounds.x === 1280, at(p));
 
+  // più schermi: a tutto schermo su uno schermo a lato, nella direzione scelta
+  const full = (p, x) => p.maximize && p.bounds.x === x && p.bounds.width === 1920;
   displays = [D(1, 0), D(2, 1920)];
   p = viewerHost.placeCompare(win(1920), 'sinistra');
-  check('due schermi, viewer a destra: sull\'altro schermo, metà sinistra', p.bounds.x === 0 && p.bounds.width === 960, at(p));
+  check('due schermi, viewer a destra, ◧: schermo di sinistra, intero', full(p, 0), at(p));
+  p = viewerHost.placeCompare(win(1920), 'destra');
+  check('due schermi, viewer a destra, ◨ ma a destra non c\'è niente: l\'altro schermo, intero', full(p, 0), at(p));
   p = viewerHost.placeCompare(win(0), 'destra');
-  check('due schermi, viewer a sinistra: sull\'altro schermo, metà destra', p.bounds.x === 1920 + 960 && p.bounds.width === 960, at(p));
+  check('due schermi, viewer a sinistra, ◨: schermo di destra, intero', full(p, 1920), at(p));
 
   displays = [D(1, 0), D(2, 1920), D(3, 3840)];
+  p = viewerHost.placeCompare(win(1920), 'sinistra');
+  check('tre schermi, viewer al centro, ◧: schermo di sinistra', full(p, 0), at(p));
+  p = viewerHost.placeCompare(win(1920), 'destra');
+  check('tre schermi, viewer al centro, ◨: schermo di destra', full(p, 3840), at(p));
   p = viewerHost.placeCompare(win(0), 'destra');
-  check('tre schermi, viewer sul primo: lo schermo più vicino', p.bounds.x === 1920 + 960, at(p));
+  check('tre schermi, viewer sul primo, ◨: il più vicino a destra', full(p, 1920), at(p));
 
-  p = viewerHost.placeCompare(null, 'sinistra');
-  check('senza finestra di partenza: rispetto allo schermo principale', p.bounds.x === 1920, at(p));
+  p = viewerHost.placeCompare(null, 'destra');
+  check('senza finestra di partenza: rispetto allo schermo principale', full(p, 1920), at(p));
 
   console.log(ko ? 'QUALCOSA NON VA' : 'TUTTI OK');
   app.exit(ko ? 1 : 0);

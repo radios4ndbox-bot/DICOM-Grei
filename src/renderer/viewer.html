@@ -62,13 +62,15 @@
         <button id="btn-layout" title="Uno o due pannelli affiancati — CTRL + rotella, doppio clic · MAIUSC + frecce sinistra/destra: serie precedente/successiva · X + clic: svuota il pannello">Due pannelli</button>
         <button id="btn-sync" title="Scorri i due pannelli insieme, alla stessa quota — S: sì/no · J: collega · C: scollega">Sincronizza</button>
         <button id="btn-full" title="Schermo intero — F11 · MAIUSC+T: mostra/nascondi i dati a schermo">Schermo intero</button>
+        <!-- sopra le altre finestre (il PACS) sullo schermo in cui sta; acceso di serie -->
+        <button id="btn-ontop" class="on" title="Resta davanti alle altre finestre, PACS compreso, anche cliccando altrove">In primo piano</button>
       </div>
       <div class="tools__group">
         <!-- una seconda finestra sulla stessa immagine, per lo schermo accanto -->
         <button id="btn-compare" title="Apre questa immagine in una seconda finestra">Compara</button>
         <!-- quale metà di schermo prende la finestra di confronto; si ricorda -->
-        <button id="btn-half-l" class="half" data-side="sinistra" title="Compara apre nella metà sinistra dello schermo">◧</button>
-        <button id="btn-half-r" class="half" data-side="destra" title="Compara apre nella metà destra dello schermo">◨</button>
+        <button id="btn-half-l" class="half" data-side="sinistra" title="Compara verso sinistra: a tutto schermo sullo schermo a sinistra; con uno schermo solo, nella sua metà sinistra">◧</button>
+        <button id="btn-half-r" class="half" data-side="destra" title="Compara verso destra: a tutto schermo sullo schermo a destra; con uno schermo solo, nella sua metà destra">◨</button>
         <!-- solo nella finestra di confronto, dove l'elenco a lato parte chiuso -->
         <button id="btn-side" title="Elenco di esami e serie">Elenco</button>
       </div>

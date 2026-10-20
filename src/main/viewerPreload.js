@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('archive', {
   frame: (id, f, fr) => ipcRenderer.invoke('archive-frame', { id, f, fr }),
   remove: (id) => ipcRenderer.invoke('archive-delete', id),
   fullscreen: () => ipcRenderer.invoke('viewer-fullscreen'),
+  // in primo piano sopra le altre finestre (il PACS): vale per tutte le finestre del viewer
+  setOnTop: (value) => ipcRenderer.invoke('viewer-on-top', value === true),
+  getOnTop: () => ipcRenderer.invoke('viewer-on-top-get'),
+  onOnTop: (cb) => subscribe('viewer-on-top', cb),
   // seconda finestra sulla stessa immagine: { id, key (serie), idx (immagine) }
   compare: (target) => ipcRenderer.invoke('viewer-compare', target || {}),
   onChanged: (cb) => subscribe('archive-changed', cb),

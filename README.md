@@ -206,12 +206,19 @@ per cui scade.
   sincronizzato alla stessa quota;
 - lettere di orientamento (A/P, R/L, H/F) che seguono rotazioni e riflessioni;
 - **«Compara»**: apre l'immagine che si sta guardando in una seconda finestra,
-  come quelle del viewer del PACS, da affiancargli sullo schermo accanto. Con
-  più schermi va su uno diverso da quello di partenza (il più vicino, e libero
-  da altre finestre di confronto) a tutto schermo; con uno solo occupa la metà
-  destra. È un viewer completo senza l'elenco a lato, che «Elenco» riapre; le
-  finestre sono indipendenti, se ne possono aprire quante servono, e restano
-  aperte anche chiudendo la finestra dell'archivio.
+  come quelle del viewer del PACS, da affiancargli sullo schermo accanto. ◧ e
+  ◨ accanto al pulsante dicono la direzione, e la scelta si ricorda: con più
+  schermi la finestra va **a tutto schermo** sullo schermo a lato in quella
+  direzione (il più vicino, preferendo uno libero da altre finestre di
+  confronto; se da quel lato non ce ne sono, l'altro); con uno schermo solo ne
+  occupa la metà sinistra o destra. È un viewer completo senza l'elenco a
+  lato, che «Elenco» riapre; le finestre sono indipendenti, se ne possono
+  aprire quante servono, e restano aperte anche chiudendo l'archivio;
+- **«In primo piano»** (acceso di serie): viewer e finestre di confronto
+  restano sopra le altre finestre, PACS compreso, sullo schermo in cui sono.
+  Il viewer del PACS si apre su tutti gli schermi: senza, un clic sul PACS
+  dall'altro schermo lo portava davanti anche a DICOM Grei. Il pulsante lo
+  spegne per tutte le finestre del viewer, e la scelta si ricorda.
 
 **Tastiera e mouse sono quelli del viewer del PACS** (Fujifilm Synapse 5,
 elenco «Keyboard Shortcuts for the Viewer and Worklist» della sua guida in

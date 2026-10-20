@@ -1168,6 +1168,23 @@
   $('btn-sync').addEventListener('click', () => setSync(!state.sync));
   $('btn-full').addEventListener('click', () => api.fullscreen());
 
+  // «In primo piano»: vale per tutte le finestre del viewer, e si ricorda
+  const showOnTop = (on) => $('btn-ontop').classList.toggle('on', !!on);
+  $('btn-ontop').addEventListener('click', async () => {
+    const on = await api.setOnTop(!$('btn-ontop').classList.contains('on'));
+    try {
+      localStorage.setItem('primo-piano', on ? 'si' : 'no');
+    } catch {}
+  });
+  api.onOnTop(showOnTop);
+  (async () => {
+    let wanted = true;
+    try {
+      wanted = localStorage.getItem('primo-piano') !== 'no';
+    } catch {}
+    showOnTop(wanted === (await api.getOnTop()) ? wanted : await api.setOnTop(wanted));
+  })();
+
   // «Compara»: la stessa immagine in una seconda finestra, da mettere sullo
   // schermo accanto (di fianco al viewer del PACS, o a questo).
   // Quale metà di schermo prende: la sceglie il medico, secondo dove sta il

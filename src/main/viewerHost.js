@@ -79,6 +79,32 @@ function decode(file, frame) {
   });
 }
 
+/*
+ * In primo piano. Il viewer del PACS si apre su tutti gli schermi della
+ * postazione: un clic sul PACS, sull'altro schermo, portava la sua finestra
+ * davanti anche su quello di DICOM Grei, che spariva mentre si scorreva.
+ * Viewer e finestre di confronto restano quindi sopra le finestre normali
+ * (PACS compreso), sullo schermo in cui sono. Si spegne con «In primo piano»
+ * nella barra; la scelta vale per tutte le finestre del viewer.
+ */
+let onTop = true;
+
+function applyOnTop(w) {
+  if (!w || w.isDestroyed()) return;
+  // 'floating': sopra le finestre normali, sotto i menu e gli avvisi di sistema
+  w.setAlwaysOnTop(onTop, 'floating');
+}
+
+function setOnTop(value) {
+  onTop = !!value;
+  for (const w of [win, ...compares]) {
+    if (!w || w.isDestroyed()) continue;
+    applyOnTop(w);
+    w.webContents.send('viewer-on-top', onTop);
+  }
+  return onTop;
+}
+
 const VIEWER_URL = (hash) =>
   url.format({ pathname: path.join(__dirname, '../renderer/viewer.html'), protocol: 'file:', slashes: true, hash });
 
@@ -98,6 +124,7 @@ function createWindow(opts, hash, initial) {
     ...opts,
   });
   w.removeMenu();
+  applyOnTop(w);
   w.loadURL(VIEWER_URL(hash));
   w.webContents.once('did-finish-load', () => {
     if (initial && !w.isDestroyed()) w.webContents.send('viewer-open-exam', initial);
@@ -125,29 +152,34 @@ function open(examId) {
 }
 
 /**
- * Dove mettere una finestra di confronto: la metà sinistra o destra di uno
- * schermo, a scelta del medico (accanto al viewer del PACS).
+ * Dove mettere una finestra di confronto. ◧/◨ dicono la direzione.
  *
- * Quale schermo: con più schermi, uno diverso da quello della finestra di
- * partenza, preferendo quelli senza un'altra finestra di confronto e, fra
- * questi, il più vicino; con uno schermo solo, quello.
+ * Con più schermi (la postazione di refertazione): a tutto schermo su uno
+ * schermo a lato, quello più vicino nella direzione scelta; se da quel lato
+ * non ce ne sono, il più vicino dall'altro. Fra due candidati si preferisce
+ * quello senza un'altra finestra di confronto. Così era nelle prime versioni,
+ * e così deve restare: la meta' di uno schermo a lato è spazio sprecato.
+ *
+ * Con uno schermo solo: la metà sinistra o destra, accanto al resto.
  *
  * @param {'sinistra'|'destra'} side
  */
 function placeCompare(from, side = 'destra') {
   const displays = screen.getAllDisplays();
   const here = from && !from.isDestroyed() ? screen.getDisplayMatching(from.getBounds()) : screen.getPrimaryDisplay();
-  let target = here;
   const others = displays.filter((d) => d.id !== here.id);
   if (others.length) {
+    const cx = (d) => d.bounds.x + d.bounds.width / 2;
+    const onSide = others.filter((d) => (side === 'sinistra' ? cx(d) < cx(here) : cx(d) > cx(here)));
+    const pool = onSide.length ? onSide : others;
     const taken = new Set(
       [...compares].filter((w) => !w.isDestroyed()).map((w) => screen.getDisplayMatching(w.getBounds()).id)
     );
-    const dist = (d) => Math.abs(d.bounds.x + d.bounds.width / 2 - (here.bounds.x + here.bounds.width / 2));
-    others.sort((p, q) => (taken.has(p.id) ? 1 : 0) - (taken.has(q.id) ? 1 : 0) || dist(p) - dist(q));
-    target = others[0];
+    const dist = (d) => Math.abs(cx(d) - cx(here));
+    pool.sort((p, q) => (taken.has(p.id) ? 1 : 0) - (taken.has(q.id) ? 1 : 0) || dist(p) - dist(q));
+    return { bounds: pool[0].workArea, maximize: true };
   }
-  const a = target.workArea;
+  const a = here.workArea;
   const half = Math.floor(a.width / 2);
   const bounds =
     side === 'sinistra'
@@ -216,6 +248,10 @@ function register() {
     });
     return { ok: true };
   });
+
+  // «In primo piano»: vale per tutte le finestre del viewer
+  ipcMain.handle('viewer-on-top', (_e, value) => setOnTop(value === true));
+  ipcMain.handle('viewer-on-top-get', () => onTop);
 
   ipcMain.handle('viewer-fullscreen', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender);
