@@ -435,6 +435,32 @@ npm run start        # avvio in sviluppo
 npm run dist         # pacchetto NSIS (richiede Windows)
 ```
 
+### Installazione
+
+La prima pagina dell'installer chiede per chi installare:
+
+| | dove | permessi |
+|---|---|---|
+| **Solo per me** (predefinito) | `%LOCALAPPDATA%\Programs\DICOM Grei` | nessuno |
+| **Per tutti gli utenti** | `%ProgramFiles%\DICOM Grei` | amministratore (Windows lo chiede con UAC) |
+
+Per la distribuzione da parte dell'IT (SCCM, Intune, GPO), da un account
+amministratore o di sistema:
+
+```bat
+"DICOM Grei-Setup-<versione>.exe" /S /allusers
+"%ProgramFiles%\DICOM Grei\Uninstall DICOM Grei.exe" /S /allusers
+```
+
+Le impostazioni non dipendono dal modo di installazione: restano per utente in
+`%APPDATA%\dicom-import-tool` e per postazione in `%ProgramData%\DICOM Grei`. Il
+programma non scrive mai nella propria cartella di installazione.
+
+Una copia «solo per me» e una «per tutti» non si sostituiscono a vicenda:
+restano installate tutte e due, con i collegamenti doppi. Prima di distribuire
+«per tutti» su una postazione dove qualcuno l'aveva già installato per sé,
+quella copia va disinstallata da «App installate» del suo account.
+
 ### Pubblicazione
 
 1. Da una macchina con `gh` + rete:

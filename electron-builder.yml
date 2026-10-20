@@ -69,9 +69,20 @@ win:
   # ------------------------------------------------------------------
 
 nsis:
+  # Due modi di installare, scelti nella prima pagina dell'installer:
+  # - «Solo per me» (predefinito): in %LOCALAPPDATA%\Programs, senza permessi
+  #   di amministratore. È quello che serve su una postazione senza l'IT.
+  # - «Per tutti gli utenti»: in Program Files, una volta per tutto il PC.
+  #   Chiede le credenziali di amministratore (UAC). È quello da usare quando
+  #   distribuisce l'IT, in silenzio: "DICOM Grei-Setup-<ver>.exe" /S /allusers
+  # Le impostazioni non cambiano posto: restano per utente in
+  # %APPDATA%\dicom-import-tool e per postazione in %ProgramData%\DICOM Grei.
   oneClick: false
   perMachine: false
-  allowElevation: false
+  # true: un utente normale può scegliere «Per tutti gli utenti» e Windows gli
+  # chiede le credenziali di amministratore. Con false l'opzione restava grigia
+  # («must run as admin») a meno di aver lanciato l'installer da amministratore.
+  allowElevation: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
